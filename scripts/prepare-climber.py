@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Separate the supplied climbing clip into a human atlas and a static cliff.
+"""Extract the human-only atlas and import the separately supplied cliff image.
 
 Requires ffmpeg, ffprobe, Pillow, numpy, opencv-python, and onnxruntime.
 Usage: python3 scripts/prepare-climber.py VIDEO --model-dir /path/to/model-cache
-Optional --review-dir saves local contact sheets and extraction diagnostics.
+Optional --cliff-source selects the supplied PNG; --review-dir saves diagnostics.
 
 Landmarks are authored for the original 464x624, 10-second reference clip.
 MobileSAM runs locally. Only pinned public model weights are downloaded when
@@ -21,7 +21,9 @@ from pathlib import Path
 import cv2
 import numpy as np
 import onnxruntime as ort
-from PIL import Image, ImageChops, ImageDraw, features
+from PIL import Image, ImageDraw, features
+
+from prepare_cliff import prepare_cliff
 
 
 FRAME_WIDTH, FRAME_HEIGHT = 232, 312
@@ -29,7 +31,6 @@ COLUMNS, ROWS, FRAMES, FPS, DURATION = 12, 10, 120, 12, 10
 SOURCE_WIDTH, SOURCE_HEIGHT = 464, 624
 ANCHOR_X, ANCHOR_Y = 72, 56
 SUBJECT_SCALE = 0.5
-WALL_WIDTH, WALL_HEIGHT = 480, 2880
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
 MODEL_REVISION = "0d3b403339b4674a82493d5e97964dd78089ddc8"
 MODELS = {
@@ -333,81 +334,6 @@ def stabilized_sprite(frame, mask, hand):
     return Image.fromarray(result)
 
 
-def build_wall(frames):
-    indices = [36, 48, 60, 72, 84, 96, 108, 119]
-    sift = cv2.SIFT_create(nfeatures=2000)
-    detector_mask = np.zeros((SOURCE_HEIGHT, SOURCE_WIDTH), np.uint8)
-    detector_mask[:, :145] = 255
-    descriptors = [
-        sift.detectAndCompute(cv2.cvtColor(frames[i], cv2.COLOR_RGB2GRAY), detector_mask)
-        for i in indices
-    ]
-    transforms = [np.eye(3)]
-    registrations = []
-    for previous, following in zip(descriptors, descriptors[1:]):
-        kp1, desc1 = previous
-        kp2, desc2 = following
-        matches = [
-            first for first, second in cv2.BFMatcher().knnMatch(desc1, desc2, k=2)
-            if first.distance < 0.75 * second.distance
-        ]
-        if len(matches) < 12:
-            raise RuntimeError("Too few rock features for a trustworthy wall panorama")
-        src = np.float32([kp1[match.queryIdx].pt for match in matches])
-        dst = np.float32([kp2[match.trainIdx].pt for match in matches])
-        cv2.setRNGSeed(7)
-        affine, inliers = cv2.estimateAffinePartial2D(
-            src, dst, method=cv2.RANSAC, ransacReprojThreshold=3
-        )
-        if affine is None or int(inliers.sum()) < 12:
-            raise RuntimeError("Rock-only panorama registration failed")
-        matrix = np.vstack((affine, [0, 0, 1]))
-        transforms.append(transforms[-1] @ np.linalg.inv(matrix))
-        registrations.append(int(inliers.sum()))
-
-    # Only the clean left rock face is ever admitted: no people, ropes, or
-    # inpainted/generated texture. These rectangles overlap after registration.
-    clean_width = 140
-    corners = np.float32([[8, 0], [clean_width - 8, 0], [8, 623], [clean_width - 8, 623]])
-    projected = [cv2.perspectiveTransform(corners[None], matrix)[0] for matrix in transforms]
-    left = max(points[:, 0].min() for points in projected) + 2
-    right = min(points[:, 0].max() for points in projected) - 2
-    width = right - left
-    height = width * WALL_HEIGHT / WALL_WIDTH
-    ymin = min(points[:, 1].min() for points in projected)
-    ymax = max(points[:, 1].max() for points in projected)
-    top = (ymin + ymax - height) / 2
-    scale = WALL_WIDTH / width
-    output = np.array([[scale, 0, -left * scale], [0, scale, -top * scale], [0, 0, 1]])
-    color_sum = np.zeros((WALL_HEIGHT, WALL_WIDTH, 3), np.float32)
-    weight_sum = np.zeros((WALL_HEIGHT, WALL_WIDTH), np.float32)
-    yy, xx = np.mgrid[:SOURCE_HEIGHT, :SOURCE_WIDTH]
-    horizontal = np.clip(np.minimum(xx, clean_width - 1 - xx) / 8, 0, 1)
-    vertical = np.maximum(0, 1 - np.abs((yy - 311.5) / 311.5)) ** 4
-    weight = (horizontal * vertical).astype(np.float32)
-    for index, matrix in zip(indices, transforms):
-        warp = output @ matrix
-        warped_weight = cv2.warpPerspective(weight, warp, (WALL_WIDTH, WALL_HEIGHT))
-        warped_color = cv2.warpPerspective(
-            frames[index].astype(np.float32) * weight[:, :, None],
-            warp, (WALL_WIDTH, WALL_HEIGHT),
-        )
-        weight_sum += warped_weight
-        color_sum += warped_color
-    if weight_sum.min() < 0.0001:
-        raise RuntimeError("Registered cliff has uncovered pixels; refusing to fill with invented texture")
-    rgb = np.clip(color_sum / weight_sum[:, :, None], 0, 255).round().astype(np.uint8)
-    y = np.arange(WALL_HEIGHT, dtype=np.float64)
-    left_edge = 55 + 15 * np.sin(y / 241 + 0.3) + 9 * np.sin(y / 113 + 1.1)
-    right_edge = 365 + 30 * np.sin(y / 347 + 0.6) + 17 * np.sin(y / 157 + 1.8)
-    x = np.arange(WALL_WIDTH)[None, :]
-    distance = np.minimum(x - left_edge[:, None], right_edge[:, None] - x)
-    alpha = np.clip(distance + 0.5, 0, 1)
-    wall = np.dstack((rgb, (alpha * 255).round().astype(np.uint8)))
-    wall[wall[:, :, 3] == 0] = 0
-    return Image.fromarray(wall), registrations
-
-
 def save_review(directory, sprites, wall, diagnostics):
     directory.mkdir(parents=True, exist_ok=True)
     indices = [0, 12, 24, 30, 36, 48, 60, 72, 84, 96, 108, 119]
@@ -422,38 +348,15 @@ def save_review(directory, sprites, wall, diagnostics):
             draw.text((x + 8, y + 6), f"Frame {index}; anchor ({ANCHOR_X}, {ANCHOR_Y})",
                       fill="#24332d" if background == 0 else "#eeeeee")
     sheet.save(directory / "human-contact-sheet.webp", lossless=True)
-    overview = Image.new("RGB", (WALL_WIDTH * 2, WALL_HEIGHT), "#f8f6f0")
-    overview.paste("#182227", (WALL_WIDTH, 0, WALL_WIDTH * 2, WALL_HEIGHT))
+    overview = Image.new("RGB", (wall.width * 2, wall.height), "#f8f6f0")
+    overview.paste("#182227", (wall.width, 0, wall.width * 2, wall.height))
     overview.paste(wall, (0, 0), wall)
-    overview.paste(wall, (WALL_WIDTH, 0), wall)
+    overview.paste(wall, (wall.width, 0), wall)
     overview.save(directory / "wall-light-dark.webp", lossless=True)
     (directory / "diagnostics.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
 
 
-def write_geometry(metadata):
-    with Image.open(ASSETS / "cliff-wall.webp") as wall:
-        alpha = np.asarray(wall.getchannel("A"))
-        samples = []
-        for y in np.rint(np.linspace(0, wall.height - 1, 129)).astype(int):
-            opaque = np.flatnonzero(alpha[y] > 200)
-            if not len(opaque):
-                raise RuntimeError(f"The static cliff has an empty row at {y}")
-            samples.append(round(int(opaque[-1]) / wall.width, 6))
-    geometry = {
-        "rightEdge": samples,
-        "anchorX": metadata["anchorX"],
-        "anchorY": metadata["anchorY"],
-    }
-    metadata["geometry"] = geometry
-    (ASSETS / "cliff-geometry.js").write_text(
-        "window.ayaClimbGeometry = Object.freeze(" +
-        json.dumps(geometry, separators=(",", ":")) + ");\n",
-        encoding="utf-8",
-    )
-    (ASSETS / "climber.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
-
-
-def build(source, model_dir, review_dir):
+def build(source, model_dir, review_dir, cliff_source):
     frames = decode_video(source)
     encoder, decoder = load_models(model_dir)
     landmarks = tracked_landmarks(frames)
@@ -467,8 +370,6 @@ def build(source, model_dir, review_dir):
         diagnostics["sourceAnchors"].append(hand.tolist())
         if (index + 1) % 12 == 0:
             print(f"Extracted {index + 1}/{FRAMES} human-only frames", flush=True)
-    wall, registrations = build_wall(frames)
-    diagnostics["wallRegistrationInliers"] = registrations
     atlas = Image.new("RGBA", (FRAME_WIDTH * COLUMNS, FRAME_HEIGHT * ROWS))
     for index, sprite in enumerate(sprites):
         atlas.paste(sprite, (index % COLUMNS * FRAME_WIDTH, index // COLUMNS * FRAME_HEIGHT))
@@ -476,26 +377,17 @@ def build(source, model_dir, review_dir):
         "frameWidth": FRAME_WIDTH, "frameHeight": FRAME_HEIGHT,
         "columns": COLUMNS, "rows": ROWS, "frames": FRAMES, "fps": FPS, "duration": DURATION,
         "anchorX": ANCHOR_X, "anchorY": ANCHOR_Y,
-        "wallWidth": WALL_WIDTH, "wallHeight": WALL_HEIGHT,
     }
-    if review_dir:
-        save_review(review_dir, sprites, wall, diagnostics)
     ASSETS.mkdir(parents=True, exist_ok=True)
     atlas.save(ASSETS / "climber-atlas.webp", "WEBP", quality=90, method=6, alpha_quality=100, exact=True)
-    wall.save(ASSETS / "cliff-wall.webp", "WEBP", quality=91, method=6, alpha_quality=100, exact=True)
-    with Image.open(ASSETS / "climber-atlas.webp") as encoded:
-        poster = encoded.crop((0, 0, FRAME_WIDTH, FRAME_HEIGHT))
-    poster.save(ASSETS / "climber-poster.webp", "WEBP", lossless=True, method=6, exact=True)
-    write_geometry(metadata)
-    with Image.open(ASSETS / "cliff-wall.webp") as encoded:
-        if not np.all(np.asarray(encoded.getchannel("A"))[:, 100:300] == 255):
-            raise RuntimeError("Cliff's continuous divider-covering band is not fully opaque")
-    with Image.open(ASSETS / "climber-poster.webp") as encoded:
-        if ImageChops.difference(encoded, poster).getbbox() is not None:
-            raise RuntimeError("Poster does not exactly match the first atlas cell")
+    (ASSETS / "climber.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    metadata = prepare_cliff(cliff_source)
+    if review_dir:
+        with Image.open(ASSETS / "cliff-wall.webp") as wall:
+            save_review(review_dir, sprites, wall, diagnostics)
     for filename in ("climber-atlas.webp", "climber-poster.webp", "climber.json", "cliff-wall.webp", "cliff-geometry.js"):
         print(f"assets/{filename}: {(ASSETS / filename).stat().st_size:,} bytes")
-    print(f"Human-only atlas: {FRAMES} frames; anchor ({ANCHOR_X}, {ANCHOR_Y}); static wall {WALL_WIDTH}x{WALL_HEIGHT}")
+    print(f"Human-only atlas: {FRAMES} frames; supplied wall {metadata['wallWidth']}x{metadata['wallHeight']}")
 
 
 def main():
@@ -503,11 +395,15 @@ def main():
     parser.add_argument("input", type=Path)
     parser.add_argument("--model-dir", type=Path, default=Path.home() / ".cache" / "aya-climber-models")
     parser.add_argument("--review-dir", type=Path)
+    parser.add_argument("--cliff-source", type=Path, default=ASSETS / "cliff-source.png")
     args = parser.parse_args()
     source = args.input.expanduser().resolve()
     if not source.is_file():
         parser.error(f"Input video does not exist: {source}")
-    build(source, args.model_dir.expanduser().resolve(), args.review_dir)
+    cliff_source = args.cliff_source.expanduser().resolve()
+    if not cliff_source.is_file():
+        parser.error(f"Supplied cliff image does not exist: {cliff_source}")
+    build(source, args.model_dir.expanduser().resolve(), args.review_dir, cliff_source)
 
 
 if __name__ == "__main__":

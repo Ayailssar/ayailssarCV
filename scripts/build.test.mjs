@@ -65,6 +65,12 @@ test("story order is title, about, software, experience, then contact", () => {
   assert.match(read("cv.css"), /\.about-content\s*\{[^}]*flex-direction:\s*column-reverse/);
 });
 
+test("the career grows upward from the 2017 municipality role", () => {
+  const years = [...sourceHtml.matchAll(/<article data-start-year="(\d+)"/g)].map(match => Number(match[1]));
+  assert.deepEqual(years, [2017, 2020, 2021, 2022, 2024, 2025]);
+  assert.match(read("cv.css"), /\.story-panel \.experience-list,[\s\S]*?flex-direction:\s*column-reverse/);
+});
+
 test("the climbing atlas metadata matches the browser's frame layout", () => {
   const metadata = JSON.parse(read("assets/climber.json"));
   for (const [key, value] of Object.entries({
@@ -75,16 +81,20 @@ test("the climbing atlas metadata matches the browser's frame layout", () => {
 });
 
 test("the cliff is a separate full-height layer with a curved contact path", () => {
-  assert.match(sourceHtml, /id="cliff-wall" src="assets\/cliff-wall\.webp"/);
+  assert.match(sourceHtml, /id="cliff-wall" src="assets\/cliff-wall\.webp(?:\?[^"]*)?"/);
   assert(!sourceHtml.includes("climb-route"));
   const wallStyles = read("cv.css").match(/\.cliff-wall\s*\{([^}]+)\}/)[1];
   assert.match(wallStyles, /height:\s*100%/);
+  assert.match(wallStyles, /width:\s*auto/);
+  assert.match(wallStyles, /object-fit:\s*contain/);
   assert(!/transform|animation/.test(wallStyles));
   const context = { window: {} };
   new Script(scripts[1]).runInNewContext(context);
   const geometry = JSON.parse(JSON.stringify(context.window.ayaClimbGeometry));
-  assert.deepEqual(geometry, JSON.parse(read("assets/climber.json")).geometry);
-  assert.equal(geometry.rightEdge.length, 129);
+  const metadata = JSON.parse(read("assets/climber.json"));
+  assert.deepEqual(geometry, metadata.geometry);
+  assert.equal(geometry.rightEdge.length, metadata.wallHeight);
+  assert.equal(geometry.leftEdge.length, metadata.wallHeight);
   assert(geometry.rightEdge.every(value => Number.isFinite(value) && value > 0 && value < 1));
   assert(Math.max(...geometry.rightEdge) - Math.min(...geometry.rightEdge) > 0.08);
   assert(Number.isFinite(geometry.anchorX) && geometry.anchorX >= 0 && geometry.anchorX < 232);
@@ -93,6 +103,18 @@ test("the cliff is a separate full-height layer with a curved contact path", () 
     assert.equal(geometry.anchors.length, 120);
     assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 232 && anchor.y >= 0 && anchor.y < 312));
   }
+  assert(geometry.contactInset > 0);
+  assert.deepEqual(geometry.loop, { start: 50, end: 80, pixelsPerCycle: 600 });
+});
+
+test("the supplied cliff is retained with only empty margins cropped", () => {
+  const metadata = JSON.parse(read("assets/climber.json"));
+  const source = readFileSync(join(root, "assets/cliff-source.png"));
+  assert.equal(digest(source), metadata.wallSource.sha256);
+  assert.deepEqual(metadata.wallSource.crop, [0, 0, 235, 1874]);
+  assert.equal(source.readUInt32BE(16), metadata.wallSource.originalWidth);
+  assert.equal(source.readUInt32BE(20), metadata.wallSource.originalHeight);
+  assert.equal(metadata.wallWidth / metadata.wallHeight, 235 / 1874);
 });
 
 test("bundling preserves the app behavior and theme initialization", () => {

@@ -382,8 +382,13 @@ const geometryReady = Boolean(climbGeometry &&
   Array.isArray(climbGeometry.rightEdge) && climbGeometry.rightEdge.length >= 2 &&
   climbGeometry.rightEdge.every(value => Number.isFinite(value) && value > 0 && value < 1) &&
   validClimbAnchor({ x: climbGeometry.anchorX, y: climbGeometry.anchorY }) &&
-  (!climbGeometry.anchors || (Array.isArray(climbGeometry.anchors) &&
-    climbGeometry.anchors.length === climbMedia.frames && climbGeometry.anchors.every(validClimbAnchor))));
+  Array.isArray(climbGeometry.anchors) &&
+  climbGeometry.anchors.length === climbMedia.frames && climbGeometry.anchors.every(validClimbAnchor) &&
+  Number.isFinite(climbGeometry.contactInset) && climbGeometry.contactInset > 0 &&
+  climbGeometry.loop && Number.isInteger(climbGeometry.loop.start) && Number.isInteger(climbGeometry.loop.end) &&
+  climbGeometry.loop.start >= 0 && climbGeometry.loop.end <= climbMedia.frames &&
+  climbGeometry.loop.end > climbGeometry.loop.start &&
+  Number.isFinite(climbGeometry.loop.pixelsPerCycle) && climbGeometry.loop.pixelsPerCycle > 0);
 if (!geometryReady) {
   reportClimbError("The climbing path could not load. Showing a stationary pose.");
 }
@@ -452,11 +457,15 @@ function updateClimber() {
   const moving = geometryReady && cliffReady && !reducedMotion.matches;
   const travel = Math.max(0, climbDivider.clientHeight - climbFigure.offsetHeight - 48);
   const y = 24 + (moving ? (1 - progress) * travel : travel / 2);
-  const frame = moving ? Math.round(progress * (climbMedia.frames - 1)) : 0;
+  const loop = geometryReady ? climbGeometry.loop : null;
+  const distance = Math.max(0, storyMaximum - about.scrollTop);
+  const cycle = loop ? distance / loop.pixelsPerCycle : 0;
+  const frame = loop
+    ? loop.start + (moving && atlasReady ? Math.floor((cycle % 1) * (loop.end - loop.start)) : 0)
+    : 0;
   let figureX = 0;
   if (geometryReady) {
-    const anchor = climbGeometry.anchors?.[frame] ??
-      { x: climbGeometry.anchorX, y: climbGeometry.anchorY };
+    const anchor = climbGeometry.anchors[frame];
     const scale = climbFigure.clientWidth / climbMedia.frameWidth;
     const wallPosition = clamp((y + anchor.y * scale) / cliffWall.clientHeight);
     const sample = wallPosition * (climbGeometry.rightEdge.length - 1);
@@ -464,11 +473,12 @@ function updateClimber() {
     const start = climbGeometry.rightEdge[index];
     const end = climbGeometry.rightEdge[Math.min(index + 1, climbGeometry.rightEdge.length - 1)];
     const edge = (start + (end - start) * (sample - index)) * cliffWall.clientWidth;
-    figureX = edge - anchor.x * scale - 3;
+    figureX = edge - (anchor.x + climbGeometry.contactInset) * scale;
   }
   climbFigure.style.transform = `translate3d(${figureX}px, ${y}px, 0)`;
   climbFigure.dataset.progress = progress.toFixed(5);
   climbFigure.dataset.frame = String(frame);
+  climbFigure.dataset.cycle = moving ? String(Math.floor(cycle)) : "0";
   if (!atlasReady || frame === renderedClimbFrame) return;
   const x = frame % climbMedia.columns * climbMedia.frameWidth;
   const row = Math.floor(frame / climbMedia.columns) * climbMedia.frameHeight;
