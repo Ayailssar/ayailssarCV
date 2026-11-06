@@ -1,0 +1,14 @@
+{
+  "name": "ayailssar-cv",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Aya Ilssar's upward-scrolling CV and climbing story",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node --check app.js && node --check scripts/build.mjs",
+    "test": "npm run build && node --test scripts/build.test.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
