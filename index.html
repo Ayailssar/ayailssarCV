@@ -13,8 +13,9 @@
     })();
   </script>
   <link rel="stylesheet" href="styles.css?v=intro-split-3">
-  <link rel="stylesheet" href="cv.css?v=climb-1">
-  <script src="app.js?v=climb-1" defer></script>
+  <link rel="stylesheet" href="cv.css?v=cliff-2">
+  <script src="assets/cliff-geometry.js?v=cliff-2" defer></script>
+  <script src="app.js?v=cliff-2" defer></script>
 </head>
 <body>
   <a class="skip-link" href="#about">Skip to content</a>
@@ -65,13 +66,11 @@
 
     <div class="story-panel">
       <div class="climb-divider" aria-hidden="true">
-        <span class="climb-route"></span>
-        <span class="climb-marker climb-marker-top">A LITTLE HIGHER</span>
+        <img class="cliff-wall" id="cliff-wall" src="assets/cliff-wall.webp" alt="" width="480" height="2880" fetchpriority="high">
         <div class="climb-figure" id="climb-figure">
-          <img class="climber-visual" id="climber-poster" src="assets/climber-poster.webp" alt="" width="232" height="312">
+          <img class="climber-visual" id="climber-poster" src="assets/climber-poster.webp?v=cliff-2" alt="" width="232" height="312">
           <canvas class="climber-visual" id="climber" width="232" height="312" hidden></canvas>
         </div>
-        <span class="climb-marker climb-marker-bottom">START HERE ↑</span>
       </div>
       <p class="climb-status" id="climb-status" role="status"></p>
     <main id="about" tabindex="0" aria-label="My CV, from the ground up. Start at the bottom and scroll up to explore.">

@@ -11,9 +11,12 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 
 - The right panel starts at its bottom title. Scroll upward through About,
   Software & Tools, Experience, and contact details.
-- The divider uses the character from the supplied climbing video. Its pose and
-  height follow the right panel's scroll position; scrolling back reverses the climb,
-  and stopping freezes it. It is not an autoplaying video.
+- A continuous, full-height cliff with curved edges forms the divider. Its rock
+  texture is assembled from the supplied video and stays completely still.
+- The character is a separate transparent layer. Only her pose and position change
+  with the right panel's scroll; her wall contact follows the cliff's curved edge.
+  Scrolling back reverses the climb, and stopping freezes her. Neither layer is an
+  autoplaying video.
 - The original left gallery, photos, wave motion, infinite horizontal scrolling,
   pointer movement, photo viewer, and soundtrack are retained.
 - The site defaults to light mode. Invert Colors and `?scoutTheme=dark` remain available.
@@ -38,7 +41,8 @@ Sound starts after the welcome screen, subject to browser autoplay permissions.
 - `styles.css`: unchanged base styles from the original site.
 - `cv.css`: right-panel layout and divider styles only.
 - `app.js`: original gallery behavior plus the upward story and scroll-driven frames.
-- `assets/`: photos, soundtrack, transparent climbing atlas and poster, and atlas metadata.
+- `assets/`: photos, soundtrack, static cliff panorama, character-only atlas and
+  poster, and the contour/anchor geometry.
 - `scripts/`: build, integrity tests, and local media preparation.
 - `dist/index.html`: self-contained download with styles, scripts, photos, climbing
   frames, and the complete soundtrack embedded.
@@ -50,26 +54,42 @@ npm run check
 npm test
 ```
 
+For an open page after entering the site, `scripts/check-cliff-browser.js` checks
+the actual rendered wall at five scroll positions: full height, covered panel
+seam, unchanged wall position, curved contact alignment, and independent gallery.
+It can be run with a browser evaluation tool, including
+`agent-browser eval --stdin < scripts/check-cliff-browser.js`.
+
 Download **`dist/index.html`** for one-file offline use. The root `index.html` needs
 its adjacent CSS, JS, and assets. The standalone file is large because it embeds
 the entire one-hour soundtrack; GitHub may require downloading rather than previewing it.
 
 ## Climbing media
 
-The transparent sprite atlas has 120 frames, sampled at 12 fps from the ten-second
-reference video. Frames are 232 × 312 pixels in a 12-column, 10-row atlas.
-Near-black background connected to the outside edge is removed while preserving
-the climber, clothing, rope, and supporting rock.
+The character-only transparent sprite atlas has 120 frames, sampled at 12 fps from
+the ten-second reference video. Frames are 232 × 312 pixels in a 12-column, 10-row
+atlas. The supporting rock is not part of the animated frames.
 
-To regenerate it locally, install Python 3, Pillow, and FFmpeg, then run:
+`cliff-wall.webp` is a separate static rock panorama, filling the divider from top
+to bottom with organic, rounded contours. `cliff-geometry.js` contains its sampled
+right edge and the character's contact anchor. This geometry is included directly
+in the standalone HTML too, so no runtime fetch or canvas pixel-reading permission
+is needed to position the character against the cliff.
+
+To regenerate it locally, install Python 3 and FFmpeg, then run:
 
 ```sh
+python3 -m pip install Pillow numpy opencv-python onnxruntime
 python3 scripts/prepare-climber.py "/path/to/reference-video.mp4"
 npm test
 ```
 
-The original reference video is not included in the repository. No third-party
-media generation or hosted image-processing service is required.
+The helper is calibrated to the supplied 464 × 624, ten-second clip. It uses
+locally executed MobileSAM segmentation with tracked anatomical prompts to
+separate the character, and rock-only feature alignment to assemble the cliff.
+The first media rebuild downloads pinned, checksum-verified public model weights;
+frames are never uploaded. The original video and model weights are not included
+in the repository. No hosted image-processing or media-generation service is used.
 
 ## Publish updates
 

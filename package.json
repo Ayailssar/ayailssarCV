@@ -5,7 +5,7 @@
   "description": "Aya Ilssar's upward-scrolling CV and climbing story",
   "scripts": {
     "build": "node scripts/build.mjs",
-    "check": "node --check app.js && node --check scripts/build.mjs",
+    "check": "node --check app.js && node --check scripts/build.mjs && node --check scripts/check-cliff-browser.js",
     "test": "npm run build && node --test scripts/build.test.mjs"
   },
   "engines": {

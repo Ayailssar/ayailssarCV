@@ -12,13 +12,14 @@ const sourceHtml = read("index.html");
 const sourceScript = read("app.js");
 const html = read("dist/index.html");
 const scripts = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].map((match) => match[1]);
+const appScript = scripts.at(-1);
 const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
 
 test("production is one HTML file with inline styles and executable scripts", () => {
   assert.deepEqual(readdirSync(join(root, "dist")), ["index.html"]);
   assert(!html.includes("assets/"));
   assert(!/<script\b[^>]*\bsrc=|<link\b[^>]*rel="stylesheet"/i.test(html));
-  assert.equal(scripts.length, 2);
+  assert.equal(scripts.length, 3);
   for (const script of scripts) assert.doesNotThrow(() => new Script(script));
   assert(html.includes(`<style>\n${read("styles.css")}</style>`));
   assert(html.includes(`<style>\n${read("cv.css")}</style>`));
@@ -29,12 +30,12 @@ test("all photos, climbing media, and the full soundtrack are embedded without m
   const sourcePaths = [
     ...sourceHtml.matchAll(/\bsrc="(assets\/[^"]+)"/g),
     ...sourceScript.matchAll(/\bsrc: "(assets\/[^"]+)"/g)
-  ].map((match) => match[1]);
+  ].map((match) => match[1].split("?")[0]).filter(path => !path.endsWith(".js"));
   const embedded = [
     ...html.matchAll(/\bsrc="(data:[^"]+)"/g),
-    ...scripts[1].matchAll(/\bsrc: "(data:[^"]+)"/g)
+    ...appScript.matchAll(/\bsrc: "(data:[^"]+)"/g)
   ].map((match) => match[1]);
-  assert.equal(sourcePaths.length, 16);
+  assert.equal(sourcePaths.length, 17);
   assert.equal(embedded.length, sourcePaths.length);
   sourcePaths.forEach((path, index) => {
     const comma = embedded[index].indexOf(",");
@@ -73,10 +74,31 @@ test("the climbing atlas metadata matches the browser's frame layout", () => {
   }
 });
 
+test("the cliff is a separate full-height layer with a curved contact path", () => {
+  assert.match(sourceHtml, /id="cliff-wall" src="assets\/cliff-wall\.webp"/);
+  assert(!sourceHtml.includes("climb-route"));
+  const wallStyles = read("cv.css").match(/\.cliff-wall\s*\{([^}]+)\}/)[1];
+  assert.match(wallStyles, /height:\s*100%/);
+  assert(!/transform|animation/.test(wallStyles));
+  const context = { window: {} };
+  new Script(scripts[1]).runInNewContext(context);
+  const geometry = JSON.parse(JSON.stringify(context.window.ayaClimbGeometry));
+  assert.deepEqual(geometry, JSON.parse(read("assets/climber.json")).geometry);
+  assert.equal(geometry.rightEdge.length, 129);
+  assert(geometry.rightEdge.every(value => Number.isFinite(value) && value > 0 && value < 1));
+  assert(Math.max(...geometry.rightEdge) - Math.min(...geometry.rightEdge) > 0.08);
+  assert(Number.isFinite(geometry.anchorX) && geometry.anchorX >= 0 && geometry.anchorX < 232);
+  assert(Number.isFinite(geometry.anchorY) && geometry.anchorY >= 0 && geometry.anchorY < 312);
+  if (geometry.anchors) {
+    assert.equal(geometry.anchors.length, 120);
+    assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 232 && anchor.y >= 0 && anchor.y < 312));
+  }
+});
+
 test("bundling preserves the app behavior and theme initialization", () => {
   const photoPaths = [...sourceScript.matchAll(/\bsrc: "(assets\/[^"]+)"/g)].map((match) => match[1]);
   let index = 0;
-  const restoredScript = scripts[1].replace(/\bsrc: "data:[^"]+"/g, () => `src: "${photoPaths[index++]}"`);
+  const restoredScript = appScript.replace(/\bsrc: "data:[^"]+"/g, () => `src: "${photoPaths[index++]}"`);
   assert.equal(index, photoPaths.length);
   assert.equal(digest(restoredScript), digest(`\n${sourceScript}`));
   assert.equal(scripts[0], sourceHtml.match(/<script>([\s\S]*?)<\/script>/)[1]);

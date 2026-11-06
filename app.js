@@ -345,14 +345,16 @@ document.querySelectorAll(".ink").forEach((block) => {
 });
 const letters = [...document.querySelectorAll(".ink-letter")];
 const storyContent = document.querySelector(".about-content");
+const storyPanel = document.querySelector(".story-panel");
 const climbFigure = document.getElementById("climb-figure");
 const climbDivider = document.querySelector(".climb-divider");
+const cliffWall = document.getElementById("cliff-wall");
 const climbCanvas = document.getElementById("climber");
 const climbPoster = document.getElementById("climber-poster");
 const climbStatus = document.getElementById("climb-status");
 const climbContext = climbCanvas.getContext("2d");
 const climbMedia = {
-  src: "assets/climber-atlas.webp",
+  src: "assets/climber-atlas.webp?v=cliff-2",
   frameWidth: 232,
   frameHeight: 312,
   columns: 12,
@@ -360,7 +362,9 @@ const climbMedia = {
   frames: 120
 };
 const climbAtlas = new Image();
+const climbGeometry = window.ayaClimbGeometry;
 let atlasReady = false;
+let cliffReady = false;
 let renderedClimbFrame = -1;
 let storyMaximum = 0;
 let storySized = false;
@@ -368,6 +372,33 @@ let storySized = false;
 function reportClimbError(message) {
   climbStatus.textContent = message;
   console.error(message);
+}
+function validClimbAnchor(anchor) {
+  return anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y) &&
+    anchor.x >= 0 && anchor.x < climbMedia.frameWidth &&
+    anchor.y >= 0 && anchor.y < climbMedia.frameHeight;
+}
+const geometryReady = Boolean(climbGeometry &&
+  Array.isArray(climbGeometry.rightEdge) && climbGeometry.rightEdge.length >= 2 &&
+  climbGeometry.rightEdge.every(value => Number.isFinite(value) && value > 0 && value < 1) &&
+  validClimbAnchor({ x: climbGeometry.anchorX, y: climbGeometry.anchorY }) &&
+  (!climbGeometry.anchors || (Array.isArray(climbGeometry.anchors) &&
+    climbGeometry.anchors.length === climbMedia.frames && climbGeometry.anchors.every(validClimbAnchor))));
+if (!geometryReady) {
+  reportClimbError("The climbing path could not load. Showing a stationary pose.");
+}
+cliffWall.addEventListener("load", () => {
+  cliffReady = true;
+  scheduleUpdate();
+});
+cliffWall.addEventListener("error", () => {
+  cliffReady = false;
+  reportClimbError("The cliff illustration could not load. Please reload.");
+  scheduleUpdate();
+});
+if (cliffWall.complete) {
+  cliffReady = cliffWall.naturalWidth > 0;
+  if (!cliffReady) reportClimbError("The cliff illustration could not load. Please reload.");
 }
 climbPoster.addEventListener("error", () => {
   reportClimbError("The climbing illustration could not load. Please reload.");
@@ -418,10 +449,24 @@ function navigateStory(target, behavior) {
 }
 function updateClimber() {
   const progress = storyMaximum ? clamp(1 - about.scrollTop / storyMaximum) : 0;
-  const travel = Math.max(0, climbDivider.clientHeight - climbFigure.offsetHeight - 80);
-  const y = 40 + (reducedMotion.matches ? travel / 2 : (1 - progress) * travel);
-  const frame = reducedMotion.matches ? 0 : Math.round(progress * (climbMedia.frames - 1));
-  climbFigure.style.transform = `translate3d(0, ${y}px, 0)`;
+  const moving = geometryReady && cliffReady && !reducedMotion.matches;
+  const travel = Math.max(0, climbDivider.clientHeight - climbFigure.offsetHeight - 48);
+  const y = 24 + (moving ? (1 - progress) * travel : travel / 2);
+  const frame = moving ? Math.round(progress * (climbMedia.frames - 1)) : 0;
+  let figureX = 0;
+  if (geometryReady) {
+    const anchor = climbGeometry.anchors?.[frame] ??
+      { x: climbGeometry.anchorX, y: climbGeometry.anchorY };
+    const scale = climbFigure.clientWidth / climbMedia.frameWidth;
+    const wallPosition = clamp((y + anchor.y * scale) / cliffWall.clientHeight);
+    const sample = wallPosition * (climbGeometry.rightEdge.length - 1);
+    const index = Math.floor(sample);
+    const start = climbGeometry.rightEdge[index];
+    const end = climbGeometry.rightEdge[Math.min(index + 1, climbGeometry.rightEdge.length - 1)];
+    const edge = (start + (end - start) * (sample - index)) * cliffWall.clientWidth;
+    figureX = edge - anchor.x * scale - 3;
+  }
+  climbFigure.style.transform = `translate3d(${figureX}px, ${y}px, 0)`;
   climbFigure.dataset.progress = progress.toFixed(5);
   climbFigure.dataset.frame = String(frame);
   if (!atlasReady || frame === renderedClimbFrame) return;
@@ -500,6 +545,14 @@ about.addEventListener("focusout", (event) => {
 });
 about.addEventListener("touchstart", () => { rightActive = true; }, { passive: true });
 about.addEventListener("scroll", scheduleUpdate, { passive: true });
+storyPanel.addEventListener("wheel", (event) => {
+  if (event.ctrlKey || about.contains(event.target) || !event.deltaY) return;
+  event.preventDefault();
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? about.clientHeight : 1;
+  about.scrollBy({ top: event.deltaY * unit, behavior: "instant" });
+  rightActive = true;
+  scheduleUpdate();
+}, { passive: false });
 photoScroll.addEventListener("scroll", scheduleUpdate, { passive: true });
 window.addEventListener("scroll", scheduleUpdate, { passive: true });
 window.addEventListener("resize", () => { needsMeasure = true; scheduleUpdate(); });

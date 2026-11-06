@@ -8,10 +8,11 @@ const output = join(root, "dist");
 const mimeTypes = { ".jpg": "image/jpeg", ".mp3": "audio/mpeg", ".webp": "image/webp" };
 
 function embedAsset(path) {
-  assert.match(path, /^assets\/[^/\\]+$/, `Unsupported asset path: ${path}`);
-  const mimeType = mimeTypes[extname(path)];
+  const file = path.split("?")[0];
+  assert.match(file, /^assets\/[^/\\]+$/, `Unsupported asset path: ${path}`);
+  const mimeType = mimeTypes[extname(file)];
   assert(mimeType, `Unsupported asset type: ${path}`);
-  return `data:${mimeType};base64,${readFileSync(join(root, path)).toString("base64")}`;
+  return `data:${mimeType};base64,${readFileSync(join(root, file)).toString("base64")}`;
 }
 
 const stylesheets = ["styles.css", "cv.css"];
@@ -20,21 +21,26 @@ assert(!/<\/style/i.test(styles), "Stylesheet contains an HTML closing style tag
 const script = readFileSync(join(root, "app.js"), "utf8")
   .replace(/\bsrc: "(assets\/[^"]+)"/g, (_, path) => `src: "${embedAsset(path)}"`)
   .replace(/<\/script/gi, "<\\/script");
+const geometryScript = readFileSync(join(root, "assets/cliff-geometry.js"), "utf8")
+  .replace(/<\/script/gi, "<\\/script");
 let html = readFileSync(join(root, "index.html"), "utf8");
 const scriptTag = /^[ \t]*<script src="app\.js(?:\?[^"]*)?" defer><\/script>\r?\n?/m;
+const geometryTag = /^[ \t]*<script src="assets\/cliff-geometry\.js(?:\?[^"]*)?" defer><\/script>\r?\n?/m;
 for (const file of stylesheets) {
   const tag = new RegExp(`<link rel="stylesheet" href="${file.replaceAll(".", "\\.")}(?:\\?[^"]*)?">`);
   assert.match(html, tag, `Expected the ${file} stylesheet link.`);
   html = html.replace(tag, () => `<style>\n${readFileSync(join(root, file), "utf8")}</style>`);
 }
 assert.match(html, scriptTag, "Expected the deferred source script.");
+assert.match(html, geometryTag, "Expected the climbing geometry script.");
 assert.match(html, /<\/body>/, "Expected a closing body tag.");
 
 html = html
   .replace(scriptTag, "")
+  .replace(geometryTag, "")
   .replace(/\bsrc="(assets\/[^"]+)"/g, (_, path) => `src="${embedAsset(path)}"`)
   // Inline scripts cannot use defer; run after the complete page markup instead.
-  .replace("</body>", () => `<script>\n${script}</script>\n</body>`);
+  .replace("</body>", () => `<script>\n${geometryScript}</script>\n<script>\n${script}</script>\n</body>`);
 
 assert(!html.includes("assets/"), "Production HTML still references the assets folder.");
 assert(!/<script\b[^>]*\bsrc=|<link\b[^>]*rel="stylesheet"/i.test(html),
