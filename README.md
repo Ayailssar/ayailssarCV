@@ -20,19 +20,19 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 - The supplied `cliff.png` forms the full-height divider and stays completely
   still. Only its empty transparent margin is trimmed; the visible pixels and
   original aspect ratio are preserved, without stretching or repainting.
-- The character is a separate transparent layer. Only her pose and position change
-  with the right panel's scroll. Her gait loops throughout the whole ascent without
-  resetting her height, and an opaque hand contact stays inside the actual rock.
-  Scrolling back reverses the climb; each short step settles and then stops.
-  Neither layer autoplays while idle.
-- Wheel, touch, and keyboard scrolling show the intermediate reach/pull/recover
-  poses during each step instead of jumping directly to the final pose. This
-  prevents a full-cycle wheel delta from appearing motionless.
+- The character is a separate transparent layer containing **all 300 original
+  frames in their original forward order at 30 fps**. The first CV scroll starts
+  the full ten-second sequence, which then loops continuously. There is no
+  selected-pose shortcut, reverse/ping-pong loop, or scroll-modulo frame skipping.
+- Vertical position still follows the right panel's scroll independently of
+  playback, with smooth movement and an opaque hand contact on the actual rock.
+  The animation pauses while the welcome screen/photo viewer is open or the tab
+  is hidden, and respects reduced-motion mode.
 - A measured helmet reference advances continuously upward; pose recovery cannot
   make the character slide backward, and silhouette clearance keeps every pose
   inside the panel.
-- Only inspected complete-body poses are displayed. Disconnected or frame-edge
-  clipped poses are rejected during preparation.
+- Every source frame is processed. Full-body landmarks guide the masks, and
+  padded frames preserve the complete silhouette, including thin hands and feet.
 - The original left gallery, photos, wave motion, infinite horizontal scrolling,
   pointer movement, photo viewer, and soundtrack are retained.
 - The site defaults to light mode. Invert Colors and `?scoutTheme=dark` remain available.
@@ -59,7 +59,7 @@ Sound starts after the welcome screen, subject to browser autoplay permissions.
 - `styles.css`: unchanged base styles from the original site.
 - `cv.css`: right-panel layout and divider styles only.
 - `app.js`: original gallery behavior plus the upward story and scroll-driven frames.
-- `assets/`: photos, soundtrack, static cliff panorama, character-only atlas and
+- `assets/`: photos, soundtrack, static cliff panorama, three character frame sheets and
   poster, and the contour/anchor geometry.
 - `scripts/`: build, integrity tests, and local media preparation.
 - `dist/index.html`: self-contained download with styles, scripts, photos, climbing
@@ -78,9 +78,8 @@ physical hand/rock contact, repeated motion through the end, upward career order
 and an unchanged independent gallery.
 It can be run with a browser evaluation tool, including
 `agent-browser eval --stdin < scripts/check-cliff-browser.js`.
-`scripts/check-wheel-browser.js` is a Playwright-page function that checks actual
-wheel gestures, including a complete-cycle delta: multiple rendered poses, visible
-body movement, monotonic ascent, and no movement after the step settles.
+`scripts/check-full-video-browser.js` is a Playwright-page function that checks the
+first-scroll start, the entire forward sequence and its wrap back to frame zero.
 
 Download **`dist/index.html`** for one-file offline use. The root `index.html` needs
 its adjacent CSS, JS, and assets. The standalone file is large because it embeds
@@ -88,9 +87,10 @@ the entire one-hour soundtrack; GitHub may require downloading rather than previ
 
 ## Climbing media
 
-The character-only transparent sprite atlas has 120 frames, sampled at 12 fps from
-the ten-second reference video. Frames are 232 × 312 pixels in a 12-column, 10-row
-atlas. The supporting rock is not part of the animated frames.
+The three transparent frame sheets contain all 300 native 30fps frames from the
+ten-second reference video. Each padded frame is 256 × 352 pixels; each sheet has
+100 frames in a 10 × 10 grid. Source IDs 0–299 and the original video checksum are
+recorded in `climber.json`. The supporting rock is not part of the animated frames.
 
 `cliff-source.png` is the unmodified supplied image. `cliff-wall.webp` is its
 lossless 235 × 1874 crop, removing only the empty right-hand margin. The rendered
@@ -98,11 +98,9 @@ width follows the image's native ratio at the panel's height.
 
 `cliff-geometry.js` contains the edge at every source-image row and an actual opaque
 hand anchor for every pose. The hand sits slightly inside the rock face rather
-than hovering outside its edge. The inspected complete poses 14–30 form a
-reach/pull/recover sequence, returning through the same complete poses for a
-smooth repeat every 320 pixels of CV scrolling.
-Overall vertical ascent continues independently from the repeating pose sequence.
-The reduced-motion poster matches the loop's starting pose.
+than hovering outside its edge. A dedicated animation clock plays every frame
+once before looping, independently of the vertical ascent. The reduced-motion
+poster matches original frame zero.
 
 To replace the cliff without rerunning person segmentation:
 
@@ -118,18 +116,22 @@ runtime fetch or canvas pixel-reading permission.
 To regenerate it locally, install Python 3 and FFmpeg, then run:
 
 ```sh
-python3 -m pip install Pillow numpy opencv-python onnxruntime
-python3 scripts/prepare-climber.py "/path/to/reference-video.mp4" --cliff-source assets/cliff-source.png
+python3 -m pip install mediapipe==0.10.35 Pillow numpy opencv-python onnxruntime
+python3 scripts/prepare_full_climber.py "/path/to/reference-video.mp4" \
+  --model-dir "$HOME/.cache/aya-climber-models" \
+  --pose-model "$HOME/.cache/aya-climber-models/pose_landmarker_full.task" \
+  --output-dir assets --review-dir /tmp/aya-climber-review
 npm test
 ```
 
-The helper is calibrated to the supplied 464 × 624, ten-second clip. It uses
-locally executed MobileSAM segmentation with tracked anatomical prompts to
-separate the character. It reuses the supplied cliff image rather than generating
-a new panorama.
+The helper is calibrated to the supplied 464 × 624, ten-second clip. MediaPipe
+tracks the complete body and guides high-resolution MobileSAM masks. Every native
+source frame is retained; nothing is substituted or skipped. The supplied cliff
+image is retained rather than regenerated. The old short-pose exporter is retired.
 The first media rebuild downloads pinned, checksum-verified public model weights;
 frames are never uploaded. The original video and model weights are not included
 in the repository. No hosted image-processing or media-generation service is used.
+Once models are cached, extraction can run with outbound networking disabled.
 
 ## Publish updates
 

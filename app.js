@@ -357,18 +357,31 @@ const climbPoster = document.getElementById("climber-poster");
 const climbStatus = document.getElementById("climb-status");
 const climbContext = climbCanvas.getContext("2d");
 const climbMedia = {
-  src: "assets/climber-atlas.webp?v=cliff-2",
-  frameWidth: 232,
-  frameHeight: 312,
-  columns: 12,
+  pages: [
+    { src: "assets/climber-00.webp?v=full-6" },
+    { src: "assets/climber-01.webp?v=full-6" },
+    { src: "assets/climber-02.webp?v=full-6" }
+  ],
+  frameWidth: 256,
+  frameHeight: 352,
+  columns: 10,
   rows: 10,
-  frames: 120
+  framesPerPage: 100,
+  frames: 300,
+  fps: 30
 };
-const climbAtlas = new Image();
+const climbImages = [];
 const climbGeometry = window.ayaClimbGeometry;
 let atlasReady = false;
+let loadedClimbPages = 0;
 let cliffReady = false;
 let renderedClimbFrame = -1;
+let climbFrameRequest = 0;
+let playbackStarted = false;
+let videoFrame = 0;
+let videoCycles = 0;
+let videoBudget = 0;
+let lastVideoTime = null;
 let displayedClimbDistance = 0;
 let climbStepAnimating = false;
 let pendingClimbInput = false;
@@ -395,13 +408,12 @@ const geometryReady = Boolean(climbGeometry &&
   Array.isArray(climbGeometry.anchors) &&
   climbGeometry.anchors.length === climbMedia.frames && climbGeometry.anchors.every(validClimbAnchor) &&
   Number.isFinite(climbGeometry.contactInset) && climbGeometry.contactInset > 0 &&
-  climbGeometry.loop && Array.isArray(climbGeometry.loop.frames) && climbGeometry.loop.frames.length >= 2 &&
-  climbGeometry.loop.frames.every(frame => Number.isInteger(frame) && frame >= 0 && frame < climbMedia.frames) &&
   Array.isArray(climbGeometry.headY) && climbGeometry.headY.length === climbMedia.frames &&
-  climbGeometry.loop.frames.every(frame => Number.isFinite(climbGeometry.headY[frame])) &&
+  climbGeometry.headY.every(value => Number.isFinite(value) && value >= 0 && value < climbMedia.frameHeight) &&
   climbGeometry.clearance && Number.isFinite(climbGeometry.clearance.above) && climbGeometry.clearance.above > 0 &&
   Number.isFinite(climbGeometry.clearance.below) && climbGeometry.clearance.below > 0 &&
-  Number.isFinite(climbGeometry.loop.pixelsPerCycle) && climbGeometry.loop.pixelsPerCycle > 0);
+  climbGeometry.playback?.frames === climbMedia.frames &&
+  climbGeometry.playback.fps === climbMedia.fps && climbGeometry.playback.loop === true);
 if (!geometryReady) {
   reportClimbError("The climbing path could not load. Showing a stationary pose.");
 }
@@ -421,22 +433,32 @@ if (cliffWall.complete) {
 climbPoster.addEventListener("error", () => {
   reportClimbError("The climbing illustration could not load. Please reload.");
 });
-climbAtlas.addEventListener("load", () => {
-  if (climbAtlas.naturalWidth !== climbMedia.frameWidth * climbMedia.columns ||
-      climbAtlas.naturalHeight !== climbMedia.frameHeight * climbMedia.rows) {
-    reportClimbError("The climbing animation has an unexpected size. Please rebuild its frames.");
-    return;
-  }
-  atlasReady = true;
-  climbPoster.hidden = true;
-  climbCanvas.hidden = false;
-  scheduleUpdate();
-});
-climbAtlas.addEventListener("error", () => {
-  reportClimbError("The climbing animation could not load. Showing its still image.");
-});
 if (climbContext) {
-  climbAtlas.src = climbMedia.src;
+  climbMedia.pages.forEach((source, index) => {
+    const image = new Image();
+    image.decoding = "async";
+    climbImages.push(image);
+    image.addEventListener("load", () => {
+      if (image.naturalWidth !== climbMedia.frameWidth * climbMedia.columns ||
+          image.naturalHeight !== climbMedia.frameHeight * climbMedia.rows) {
+        reportClimbError(`Climbing frame sheet ${index + 1} has an unexpected size.`);
+        return;
+      }
+      image.decode().then(() => {
+        loadedClimbPages++;
+        if (loadedClimbPages === climbMedia.pages.length) {
+          atlasReady = true;
+          climbPoster.hidden = true;
+          climbCanvas.hidden = false;
+          requestClimberFrame();
+        }
+      }, error => reportClimbError(`Climbing frame sheet ${index + 1} could not decode: ${error.message}`));
+    });
+    image.addEventListener("error", () => {
+      reportClimbError(`Climbing frame sheet ${index + 1} could not load. Showing the still image.`);
+    });
+    image.src = source.src;
+  });
 } else {
   reportClimbError("This browser cannot display the climbing animation. Showing its still image.");
 }
@@ -501,11 +523,20 @@ function navigateStory(target, behavior) {
 function beginClimbingStep() {
   pendingClimbInput = true;
   climbInputTime = performance.now();
-  scheduleUpdate();
+  requestClimberFrame();
+}
+function requestClimberFrame() {
+  if (climbFrameRequest) return;
+  climbFrameRequest = requestAnimationFrame(now => {
+    climbFrameRequest = 0;
+    updateClimber(now);
+  });
 }
 function updateClimber(now) {
   const moving = geometryReady && cliffReady && !reducedMotion.matches;
+  const visible = !document.hidden && intro.classList.contains("dismissed") && !lightbox.open;
   const targetDistance = Math.max(0, storyMaximum - about.scrollTop);
+  if (moving && visible && storySized && targetDistance > 2) playbackStarted = true;
   if (!moving) pendingClimbInput = false;
   if (pendingClimbInput && Math.abs(targetDistance - displayedClimbDistance) > 0.25) {
     if (!climbStepAnimating) lastClimbTime = now - 16;
@@ -513,8 +544,7 @@ function updateClimber(now) {
     pendingClimbInput = false;
   }
   if (pendingClimbInput) {
-    if (now - climbInputTime < 120) scheduleUpdate();
-    else pendingClimbInput = false;
+    if (now - climbInputTime >= 120) pendingClimbInput = false;
   }
   if (!moving || !climbStepAnimating) {
     displayedClimbDistance = targetDistance;
@@ -526,18 +556,26 @@ function updateClimber(now) {
     if (Math.abs(targetDistance - displayedClimbDistance) < 0.25) {
       displayedClimbDistance = targetDistance;
       climbStepAnimating = false;
-    } else {
-      scheduleUpdate();
     }
   }
   lastClimbTime = now;
   const progress = storyMaximum ? clamp(displayedClimbDistance / storyMaximum) : 0;
-  const loop = geometryReady ? climbGeometry.loop : null;
-  const distance = displayedClimbDistance;
-  const cycle = loop ? distance / loop.pixelsPerCycle : 0;
-  const frame = loop
-    ? loop.frames[moving && atlasReady ? Math.floor((cycle % 1) * loop.frames.length) : 0]
-    : 14;
+  const playing = playbackStarted && moving && visible && atlasReady;
+  const interval = 1000 / climbMedia.fps;
+  if (playing) {
+    if (lastVideoTime !== null) {
+      videoBudget += Math.min(now - lastVideoTime, interval * 2);
+      if (videoBudget + 0.001 >= interval) {
+        videoFrame = (videoFrame + 1) % climbMedia.frames;
+        if (videoFrame === 0) videoCycles++;
+        videoBudget = Math.min(interval, Math.max(0, videoBudget - interval));
+      }
+    }
+    lastVideoTime = now;
+  } else {
+    lastVideoTime = null;
+  }
+  const frame = moving && atlasReady ? videoFrame : 0;
   const scale = climbFigure.clientWidth / climbMedia.frameWidth;
   const above = geometryReady ? climbGeometry.clearance.above * scale : 0;
   const below = geometryReady ? climbGeometry.clearance.below * scale : climbFigure.offsetHeight;
@@ -558,14 +596,20 @@ function updateClimber(now) {
   climbFigure.style.transform = `translate3d(${figureX}px, ${y}px, 0)`;
   climbFigure.dataset.progress = progress.toFixed(5);
   climbFigure.dataset.frame = String(frame);
-  climbFigure.dataset.cycle = moving ? String(Math.floor(cycle)) : "0";
+  climbFigure.dataset.cycle = String(videoCycles);
   climbFigure.dataset.moving = String(climbStepAnimating || pendingClimbInput);
+  climbFigure.dataset.playing = String(playing);
+  climbFigure.dataset.started = String(playbackStarted);
+  if (visible && (playing || climbStepAnimating || pendingClimbInput)) requestClimberFrame();
   if (!atlasReady || frame === renderedClimbFrame) return;
-  const x = frame % climbMedia.columns * climbMedia.frameWidth;
-  const row = Math.floor(frame / climbMedia.columns) * climbMedia.frameHeight;
+  const page = Math.floor(frame / climbMedia.framesPerPage);
+  const cell = frame % climbMedia.framesPerPage;
+  const x = cell % climbMedia.columns * climbMedia.frameWidth;
+  const row = Math.floor(cell / climbMedia.columns) * climbMedia.frameHeight;
   climbContext.clearRect(0, 0, climbCanvas.width, climbCanvas.height);
-  climbContext.drawImage(climbAtlas, x, row, climbMedia.frameWidth, climbMedia.frameHeight,
+  climbContext.drawImage(climbImages[page], x, row, climbMedia.frameWidth, climbMedia.frameHeight,
     0, 0, climbCanvas.width, climbCanvas.height);
+  climbCanvas.dataset.renderedFrame = String(frame);
   renderedClimbFrame = frame;
 }
 
@@ -587,7 +631,7 @@ function measureLines() {
   readingLines.sort((a, b) => b.top - a.top);
 }
 let needsMeasure = true;
-function updateScroll(now) {
+function updateScroll() {
   framePending = false;
   if (needsMeasure) {
     measureLines();
@@ -605,7 +649,7 @@ function updateScroll(now) {
     const textPath = scene.querySelector("textPath");
     textPath.setAttribute("startOffset", reducedMotion.matches ? "4%" : `${4 + Math.sin(phase) * 1.5}%`);
   });
-  updateClimber(now);
+  requestClimberFrame();
   if (!rightActive && finePointer.matches) return;
   const biographyComplete = updateBiography();
   const readingPosition = about.scrollTop + about.clientHeight * 0.48;
@@ -656,6 +700,10 @@ window.addEventListener("scroll", scheduleUpdate, { passive: true });
 window.addEventListener("resize", () => { needsMeasure = true; scheduleUpdate(); });
 window.addEventListener("load", () => { needsMeasure = true; scheduleUpdate(); });
 reducedMotion.addEventListener("change", scheduleUpdate);
+document.addEventListener("visibilitychange", () => {
+  lastVideoTime = null;
+  requestClimberFrame();
+});
 desktop.addEventListener("change", () => { needsMeasure = true; scheduleUpdate(); });
 
 document.querySelectorAll('a[href^="#"]').forEach((link) => {
@@ -694,6 +742,7 @@ lightbox.addEventListener("click", (event) => {
 lightbox.addEventListener("close", () => {
   document.body.append(cursor);
   galleryTrigger?.focus({ preventScroll: true });
+  requestClimberFrame();
 });
 document.querySelectorAll(".hobby-photo img, .profile-photo img, #lightbox-image").forEach((image) => {
   image.addEventListener("error", () => {

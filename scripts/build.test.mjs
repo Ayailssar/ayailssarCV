@@ -35,7 +35,7 @@ test("all photos, climbing media, and the full soundtrack are embedded without m
     ...html.matchAll(/\bsrc="(data:[^"]+)"/g),
     ...appScript.matchAll(/\bsrc: "(data:[^"]+)"/g)
   ].map((match) => match[1]);
-  assert.equal(sourcePaths.length, 17);
+  assert.equal(sourcePaths.length, 19);
   assert.equal(embedded.length, sourcePaths.length);
   sourcePaths.forEach((path, index) => {
     const comma = embedded[index].indexOf(",");
@@ -80,10 +80,13 @@ test("the career grows upward from the 2017 municipality role", () => {
 test("the climbing atlas metadata matches the browser's frame layout", () => {
   const metadata = JSON.parse(read("assets/climber.json"));
   for (const [key, value] of Object.entries({
-    frameWidth: 232, frameHeight: 312, columns: 12, rows: 10, frames: 120, fps: 12, duration: 10
+    frameWidth: 256, frameHeight: 352, columns: 10, rows: 10, framesPerPage: 100, frames: 300, fps: 30, duration: 10
   })) {
     assert.equal(metadata[key], value, key);
   }
+  assert.deepEqual(metadata.sourceFrameIndices, Array.from({ length: 300 }, (_, index) => index));
+  assert.deepEqual(metadata.pages, ["climber-00.webp", "climber-01.webp", "climber-02.webp"]);
+  assert.match(metadata.sourceVideoSha256, /^[a-f0-9]{64}$/);
 });
 
 test("the cliff is a separate full-height layer with a curved contact path", () => {
@@ -103,18 +106,18 @@ test("the cliff is a separate full-height layer with a curved contact path", () 
   assert.equal(geometry.leftEdge.length, metadata.wallHeight);
   assert(geometry.rightEdge.every(value => Number.isFinite(value) && value > 0 && value < 1));
   assert(Math.max(...geometry.rightEdge) - Math.min(...geometry.rightEdge) > 0.08);
-  assert(Number.isFinite(geometry.anchorX) && geometry.anchorX >= 0 && geometry.anchorX < 232);
-  assert(Number.isFinite(geometry.anchorY) && geometry.anchorY >= 0 && geometry.anchorY < 312);
-  if (geometry.anchors) {
-    assert.equal(geometry.anchors.length, 120);
-    assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 232 && anchor.y >= 0 && anchor.y < 312));
-  }
+  assert(Number.isFinite(geometry.anchorX) && geometry.anchorX >= 0 && geometry.anchorX < 256);
+  assert(Number.isFinite(geometry.anchorY) && geometry.anchorY >= 0 && geometry.anchorY < 352);
+  assert.equal(geometry.anchors.length, 300);
+  assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 256 && anchor.y >= 0 && anchor.y < 352));
   assert(geometry.contactInset > 0);
-  assert.deepEqual(geometry.loop.frames,
-    [...Array.from({ length: 17 }, (_, index) => 14 + index), ...Array.from({ length: 15 }, (_, index) => 29 - index)]);
-  assert.equal(geometry.loop.pixelsPerCycle, 320);
-  assert(geometry.loop.frames.every(frame => Number.isFinite(geometry.headY[frame]) &&
-    geometry.headY[frame] >= 0 && geometry.headY[frame] < 312));
+  assert.deepEqual(geometry.playback, { frames: 300, fps: 30, duration: 10, loop: true, trigger: "first-scroll" });
+  assert(!("loop" in geometry), "A shortened pose list must not replace the original video.");
+  assert.equal(geometry.headY.length, 300);
+  assert(geometry.headY.every(value => Number.isFinite(value) && value >= 0 && value < 352));
+  assert.equal(geometry.poseBounds.length, 300);
+  assert(geometry.poseBounds.every(([left, top, right, bottom]) =>
+    left >= 8 && top >= 8 && right <= 248 && bottom <= 344 && right > left && bottom > top));
   assert(geometry.clearance.above > 0 && geometry.clearance.below > 0);
 });
 

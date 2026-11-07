@@ -391,6 +391,10 @@ def build(source, model_dir, review_dir, cliff_source):
 
 
 def main():
+    raise SystemExit("Short pose-set exports are retired. Use scripts/prepare_full_climber.py for the complete original video.")
+
+
+def legacy_main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("input", type=Path)
     parser.add_argument("--model-dir", type=Path, default=Path.home() / ".cache" / "aya-climber-models")

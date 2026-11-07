@@ -1,6 +1,13 @@
 (async () => {
   const check = (condition, message) => { if (!condition) throw new Error(message); };
   const frame = () => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  const until = async (condition, message) => {
+    const deadline = performance.now() + 2000;
+    while (!condition()) {
+      if (performance.now() > deadline) throw new Error(message);
+      await frame();
+    }
+  };
   const about = document.getElementById("about");
   const wall = document.getElementById("cliff-wall");
   const figure = document.getElementById("climb-figure");
@@ -58,16 +65,8 @@
   const checkedBodies = new Set();
   const bodyExtents = new Map();
   const source = wall.currentSrc;
-  const loop = geometry.loop;
-  const distances = new Set(Array.from({ length: 81 }, (_, index) => Math.round(index / 80 * maximum)));
-  for (let index = 0; index < loop.frames.length; index++) {
-    distances.add(Math.min(maximum, Math.round((index + 0.5) / loop.frames.length * loop.pixelsPerCycle)));
-  }
-  for (let distance = loop.pixelsPerCycle; distance < maximum; distance += loop.pixelsPerCycle) {
-    distances.add(distance - 1);
-    distances.add(distance);
-    distances.add(Math.min(maximum, distance + 1));
-  }
+  check(geometry.playback.frames === 300 && geometry.playback.fps === 30, "The original full video is not configured.");
+  const distances = new Set(Array.from({ length: 21 }, (_, index) => Math.round(index / 20 * maximum)));
   const jobs = [...document.querySelectorAll(".experience-list article")];
   check(jobs.map(job => job.dataset.startYear).join(",") === "2017,2020,2021,2022,2024,2025", "Career chronology is wrong.");
   check(jobs.every((job, index) => index === 0 || job.getBoundingClientRect().top < jobs[index - 1].getBoundingClientRect().top),
@@ -77,18 +76,19 @@
       const progress = distance / maximum;
       about.scrollTo({ top: maximum - distance, behavior: "instant" });
       await frame();
+      await until(() => Math.abs(Number(figure.dataset.progress) - (1 - about.scrollTop / maximum)) < 0.00002,
+        "The rendered ascent did not catch up with the scroll position.");
       const currentWall = wall.getBoundingClientRect();
       for (const key of ["top", "left", "width", "height"]) {
         check(Math.abs(currentWall[key] - wallBounds[key]) < 0.1, `The cliff moved or resized at ${progress}.`);
       }
       check(wall.currentSrc === source, "The rock texture changed while scrolling.");
       check(gallery.scrollLeft === initialGallery, "CV scrolling changed the left gallery.");
-      const actualDistance = maximum - about.scrollTop;
-      const expected = loop.frames[reduced ? 0 : Math.floor((actualDistance / loop.pixelsPerCycle % 1) * loop.frames.length)];
-      check(Number(figure.dataset.frame) === expected, "The character stopped looping through the scroll.");
+      check(Number(figure.dataset.frame) >= 0 && Number(figure.dataset.frame) < 300, "The current native frame is invalid.");
+      if (reduced) check(Number(figure.dataset.frame) === 0, "Reduced motion is not a still frame.");
       const anchor = geometry.anchors[Number(figure.dataset.frame)];
       const bounds = figure.getBoundingClientRect();
-      const scale = bounds.width / 232;
+      const scale = bounds.width / climber.width;
       const contactY = bounds.top + anchor.y * scale;
       const sample = Math.max(0, Math.min(1, (contactY - wallBounds.top) / wallBounds.height)) * (geometry.rightEdge.length - 1);
       const lower = Math.floor(sample);
@@ -154,9 +154,7 @@
       check(results.every(result => Math.abs(result.top - results[0].top) < 0.1), "Reduced motion still moves the character.");
     } else {
       check(results.every((result, index) => index === 0 || result.top < results[index - 1].top), "The character did not climb upward.");
-      check(results.at(-1).cycle >= 2, "The gait did not repeat through the CV.");
-      check(new Set(results.filter(result => result.progress >= 0.9).map(result => result.frame)).size >= 3,
-        "The character froze before the end of the scroll.");
+      check(figure.dataset.started === "true", "The first CV scroll did not start the full video.");
     }
     check(document.documentElement.scrollWidth <= innerWidth, "The page overflows horizontally.");
     check(!document.getElementById("climb-status").textContent, "A climbing media error was reported.");
@@ -174,6 +172,8 @@
     for (const fraction of [0, 0.2, 0.4, 0.6, 0.8, 1.01]) {
       about.scrollTo({ top: bioStart - travel * fraction, behavior: "instant" });
       await frame();
+      await until(() => Math.abs(Number(stage.dataset.readProgress) - Math.min(1, fraction)) < 0.001,
+        "Biography highlighting did not catch up with its reading position.");
       const count = bioLetters.filter(letter => letter.classList.contains("is-read")).length;
       check(bioLetters.every((letter, index) => letter.classList.contains("is-read") === (index < count)),
         "Biography letters do not color in top-down reading order.");

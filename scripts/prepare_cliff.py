@@ -16,10 +16,6 @@ from PIL import Image
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-LOOP = {
-    "frames": list(range(14, 31)) + list(range(29, 14, -1)),
-    "pixelsPerCycle": 320,
-}
 
 
 def prepare_cliff(source):
@@ -40,70 +36,10 @@ def prepare_cliff(source):
         right.append(round(int(opaque[-1]) / wall.width, 8))
 
     metadata = json.loads((ASSETS / "climber.json").read_text(encoding="utf-8"))
-    width, height = metadata["frameWidth"], metadata["frameHeight"]
-    anchors = []
-    head_y = [None] * metadata["frames"]
-    clearance_above = 0
-    clearance_below = 0
-    with Image.open(ASSETS / "climber-atlas.webp") as image:
-        atlas = image.convert("RGBA")
-        if atlas.size != (width * metadata["columns"], height * metadata["rows"]):
-            raise ValueError("Climbing atlas dimensions do not match its metadata")
-        for index in range(metadata["frames"]):
-            x, y = index % metadata["columns"] * width, index // metadata["columns"] * height
-            pose = np.asarray(atlas.crop((x, y, x + width, y + height)))
-            if index in LOOP["frames"]:
-                solid = pose[:, :, 3] >= 128
-                ys, xs = np.nonzero(solid)
-                if not len(xs) or min(xs) < 4 or max(xs) >= width - 4 or min(ys) < 4 or max(ys) >= height - 4:
-                    raise ValueError(f"Climbing pose {index} touches a frame boundary")
-                connected = np.zeros_like(solid)
-                pending = [(int(ys[0]), int(xs[0]))]
-                connected[pending[0]] = True
-                while pending:
-                    py, px = pending.pop()
-                    for ny in range(max(0, py - 1), min(height, py + 2)):
-                        for nx in range(max(0, px - 1), min(width, px + 2)):
-                            if solid[ny, nx] and not connected[ny, nx]:
-                                connected[ny, nx] = True
-                                pending.append((ny, nx))
-                if connected.sum() / solid.sum() < 0.995:
-                    raise ValueError(f"Climbing pose {index} has a disconnected body part")
-            yy, xx = np.mgrid[:height, :width]
-            red, green, blue = pose[:, :, :3].astype(np.int16).transpose(2, 0, 1)
-            if index in LOOP["frames"]:
-                rgb = pose[:, :, :3].astype(np.int16)
-                helmet = (pose[:, :, 3] >= 240) & (xx > metadata["anchorX"] + 12) & (yy < metadata["anchorY"] + 75)
-                helmet &= (red > 105) & (rgb.max(axis=2) - rgb.min(axis=2) < 60)
-                rows = np.flatnonzero(helmet.any(axis=1))
-                if not len(rows):
-                    raise ValueError(f"No helmet reference found in complete pose {index}")
-                helmet &= yy <= rows[0] + 32
-                head_y[index] = float(np.median(np.nonzero(helmet)[0]))
-                clearance_above = max(clearance_above, head_y[index] - int(ys.min()))
-                clearance_below = max(clearance_below, int(ys.max()) + 1 - head_y[index])
-            distance = (xx - metadata["anchorX"]) ** 2 + (yy - metadata["anchorY"]) ** 2
-            hand = (pose[:, :, 3] >= 240) & (distance <= 24 ** 2) & (red - green > 15) & (red - blue > 20)
-            candidates = np.argwhere(hand)
-            if not len(candidates):
-                raise ValueError(f"No opaque hand contact found in pose {index}")
-            chosen = candidates[np.argmin(distance[hand])]
-            anchors.append({"x": int(chosen[1]), "y": int(chosen[0])})
-        first = LOOP["frames"][0]
-        x, y = first % metadata["columns"] * width, first // metadata["columns"] * height
-        poster = atlas.crop((x, y, x + width, y + height))
-
-    geometry = {
-        "rightEdge": right,
-        "leftEdge": left,
-        "anchorX": metadata["anchorX"],
-        "anchorY": metadata["anchorY"],
-        "anchors": anchors,
-        "contactInset": 18,
-        "loop": LOOP,
-        "headY": head_y,
-        "clearance": {"above": clearance_above, "below": clearance_below},
-    }
+    if metadata.get("sourceFrameIndices") != list(range(300)) or metadata.get("fps") != 30:
+        raise ValueError("Build the complete original video with prepare_full_climber.py first")
+    geometry = dict(metadata["geometry"])
+    geometry.update({"rightEdge": right, "leftEdge": left})
     metadata.update({
         "wallWidth": wall.width,
         "wallHeight": wall.height,
@@ -120,7 +56,6 @@ def prepare_cliff(source):
     if source != destination.resolve():
         shutil.copyfile(source, destination)
     wall.save(ASSETS / "cliff-wall.webp", "WEBP", lossless=True, method=6, exact=True)
-    poster.save(ASSETS / "climber-poster.webp", "WEBP", lossless=True, method=6, exact=True)
     (ASSETS / "climber.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
     (ASSETS / "cliff-geometry.js").write_text(
         "window.ayaClimbGeometry = Object.freeze(" +
@@ -130,8 +65,7 @@ def prepare_cliff(source):
         if not np.array_equal(np.asarray(encoded.convert("RGBA")), np.asarray(wall)):
             raise RuntimeError("The encoded cliff differs from the supplied image")
     print(f"Imported supplied cliff: {original.width}x{original.height}, empty-margin crop {crop}")
-    print(f"Lossless wall: {wall.width}x{wall.height}; {len(right)} contour rows; {len(anchors)} opaque hand contacts")
-    print(f"Reach/pull/recover cycle: {len(LOOP['frames'])} steps, repeated every {LOOP['pixelsPerCycle']} scroll pixels")
+    print(f"Lossless wall: {wall.width}x{wall.height}; complete {metadata['frames']}-frame video retained")
     return metadata
 
 
