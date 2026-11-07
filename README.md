@@ -11,6 +11,10 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 
 - The right panel starts at its bottom title. Scroll upward through About,
   Software & Tools, Experience, and contact details.
+- About keeps its three paragraphs in normal top-to-bottom order. Its text stays
+  in view while letters turn orange from top to bottom. Only after the biography
+  is fully colored does the rest of the page resume bottom-to-top highlighting,
+  after the portrait. On small screens the current line stays in view.
 - The career timeline grows upward: Haifa Municipality (2017), Giora Gur,
   Oren M.A.Z, Tito Oman, Bar Orian, and finally Kodo at the top.
 - The supplied `cliff.png` forms the full-height divider and stays completely
@@ -20,6 +24,8 @@ The original site at https://ayailssar.github.io/ is not changed by this project
   with the right panel's scroll. Her gait loops throughout the whole ascent without
   resetting her height, and an opaque hand contact stays inside the actual rock.
   Scrolling back reverses the climb; stopping freezes her. Neither layer autoplays.
+- Only inspected complete-body poses are displayed. Disconnected or frame-edge
+  clipped poses are rejected during preparation.
 - The original left gallery, photos, wave motion, infinite horizontal scrolling,
   pointer movement, photo viewer, and soundtrack are retained.
 - The site defaults to light mode. Invert Colors and `?scoutTheme=dark` remain available.
@@ -80,7 +86,7 @@ width follows the image's native ratio at the panel's height.
 
 `cliff-geometry.js` contains the edge at every source-image row and an actual opaque
 hand anchor for every pose. The hand sits slightly inside the rock face rather
-than hovering outside its edge. Poses 50–79 repeat every 600 pixels of CV scrolling;
+than hovering outside its edge. Complete poses 54–64 repeat every 220 pixels of CV scrolling;
 overall vertical ascent continues independently from the repeating pose sequence.
 The reduced-motion poster matches the loop's starting pose.
 

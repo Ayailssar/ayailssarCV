@@ -55,6 +55,8 @@
   });
 
   const results = [];
+  const checkedBodies = new Set();
+  const bodyExtents = new Map();
   const source = wall.currentSrc;
   const loop = geometry.loop;
   const distances = new Set(Array.from({ length: 81 }, (_, index) => Math.round(index / 80 * maximum)));
@@ -101,6 +103,50 @@
         "The hand's contact point is outside the visible cliff.");
       check(climber.getContext("2d").getImageData(anchor.x, anchor.y, 1, 1).data[3] >= 240,
         "The contact anchor is not on the visible climber.");
+      const pose = Number(figure.dataset.frame);
+      if (!checkedBodies.has(pose)) {
+        const rgba = climber.getContext("2d").getImageData(0, 0, climber.width, climber.height).data;
+        const solid = new Uint8Array(climber.width * climber.height);
+        let total = 0, first = -1;
+        const extent = { left: climber.width, right: 0, top: climber.height, bottom: 0 };
+        for (let index = 0; index < solid.length; index++) {
+          if (rgba[index * 4 + 3] < 128) continue;
+          solid[index] = 1;
+          total++;
+          if (first < 0) first = index;
+          const x = index % climber.width, y = Math.floor(index / climber.width);
+          extent.left = Math.min(extent.left, x);
+          extent.right = Math.max(extent.right, x + 1);
+          extent.top = Math.min(extent.top, y);
+          extent.bottom = Math.max(extent.bottom, y + 1);
+          check(x >= 4 && x < climber.width - 4 && y >= 4 && y < climber.height - 4, "A body part touches the sprite crop.");
+          check(bounds.top + y * scale >= storyBounds.top && bounds.top + (y + 1) * scale <= storyBounds.bottom,
+            "The rendered figure is cut by the panel edge.");
+        }
+        check(total > 0, "The climbing pose is empty.");
+        const visited = new Uint8Array(solid.length);
+        const pending = [first];
+        visited[first] = 1;
+        let connected = 0;
+        while (pending.length) {
+          const current = pending.pop(), x = current % climber.width, y = Math.floor(current / climber.width);
+          connected++;
+          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+            const nx = x + dx, ny = y + dy;
+            if (nx < 0 || nx >= climber.width || ny < 0 || ny >= climber.height) continue;
+            const index = ny * climber.width + nx;
+            if (solid[index] && !visited[index]) { visited[index] = 1; pending.push(index); }
+          }
+        }
+        check(connected / total >= 0.995, "A displayed pose has a disconnected body part.");
+        checkedBodies.add(pose);
+        bodyExtents.set(pose, extent);
+      }
+      const body = bodyExtents.get(pose);
+      check(bounds.top + body.top * scale >= storyBounds.top && bounds.top + body.bottom * scale <= storyBounds.bottom,
+        "The complete silhouette left the panel.");
+      check(bounds.left + body.left * scale >= 0 && bounds.left + body.right * scale <= innerWidth,
+        "The complete silhouette left the screen.");
       results.push({ progress, frame: Number(figure.dataset.frame), cycle: Number(figure.dataset.cycle), top: bounds.top, left: bounds.left });
     }
     if (reduced) {
@@ -113,9 +159,43 @@
     }
     check(document.documentElement.scrollWidth <= innerWidth, "The page overflows horizontally.");
     check(!document.getElementById("climb-status").textContent, "A climbing media error was reported.");
+    const bio = document.getElementById("bio-copy"), stage = document.getElementById("bio-stage");
+    const bioLetters = [...bio.querySelectorAll(".ink-letter")];
+    const otherLetters = [...document.querySelectorAll(".ink-letter")].filter(letter => !bio.contains(letter));
+    const paragraphs = [...bio.querySelectorAll(".bio-paragraph")];
+    check(paragraphs.length === 3 && paragraphs.every((paragraph, index) => !index ||
+      paragraph.getBoundingClientRect().top > paragraphs[index - 1].getBoundingClientRect().top),
+    "The biography paragraphs are not written top to bottom.");
+    const travel = parseFloat(stage.style.getPropertyValue("--bio-travel"));
+    const pinTop = about.clientHeight - parseFloat(bio.style.getPropertyValue("--bio-bottom")) - bio.getBoundingClientRect().height;
+    const bioStart = stage.getBoundingClientRect().top - about.getBoundingClientRect().top + about.scrollTop + travel - pinTop;
+    about.focus({ preventScroll: true });
+    for (const fraction of [0, 0.2, 0.4, 0.6, 0.8, 1.01]) {
+      about.scrollTo({ top: bioStart - travel * fraction, behavior: "instant" });
+      await frame();
+      const count = bioLetters.filter(letter => letter.classList.contains("is-read")).length;
+      check(bioLetters.every((letter, index) => letter.classList.contains("is-read") === (index < count)),
+        "Biography letters do not color in top-down reading order.");
+      if (count < bioLetters.length) {
+        check(otherLetters.every(letter => !letter.classList.contains("is-read")), "Later categories started coloring too soon.");
+        check(Math.abs(bio.getBoundingClientRect().top - about.getBoundingClientRect().top - pinTop) < 2,
+          "The biography did not stay visible while coloring.");
+      }
+      const current = bioLetters[Math.min(count, bioLetters.length - 1)].getBoundingClientRect();
+      const card = bio.getBoundingClientRect();
+      check(current.top >= card.top - 2 && current.bottom <= card.bottom + 2, "The current biography line is clipped.");
+    }
+    check(bioLetters.every(letter => letter.classList.contains("is-read")) && about.dataset.readDirection === "bottom-up",
+      "Reading did not return to bottom-up after all biography letters were colored.");
+    about.scrollTo({ top: 0, behavior: "instant" });
+    await frame();
+    check(otherLetters.every(letter => letter.classList.contains("is-read")), "The remaining categories never finished coloring.");
+    const phone = document.querySelector('#contact a[href="tel:+972525919726"]');
+    check(phone?.textContent.includes("052-5919726"), "The requested dial link is missing.");
     return {
       fullHeightStaticCliff: true, suppliedAspectRatioPreserved: true, continuousPhysicalContact: true,
       straightSeamHidden: true, upwardCareerChronology: true, reducedMotion: reduced,
+      completePoseCount: checkedBodies.size, topDownBiographyThenBottomUp: true, phoneLink: true,
       checkedPositions: results.length, completedCycles: results.at(-1).cycle,
       sampledPoses: [results[0], results[Math.floor(results.length / 2)], results.at(-1)]
     };

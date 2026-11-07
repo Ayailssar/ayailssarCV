@@ -16,7 +16,7 @@ from PIL import Image
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-LOOP = {"start": 50, "end": 80, "pixelsPerCycle": 600}
+LOOP = {"start": 54, "end": 65, "pixelsPerCycle": 220}
 
 
 def prepare_cliff(source):
@@ -46,6 +46,23 @@ def prepare_cliff(source):
         for index in range(metadata["frames"]):
             x, y = index % metadata["columns"] * width, index // metadata["columns"] * height
             pose = np.asarray(atlas.crop((x, y, x + width, y + height)))
+            if LOOP["start"] <= index < LOOP["end"]:
+                solid = pose[:, :, 3] >= 128
+                ys, xs = np.nonzero(solid)
+                if not len(xs) or min(xs) < 4 or max(xs) >= width - 4 or min(ys) < 4 or max(ys) >= height - 4:
+                    raise ValueError(f"Climbing pose {index} touches a frame boundary")
+                connected = np.zeros_like(solid)
+                pending = [(int(ys[0]), int(xs[0]))]
+                connected[pending[0]] = True
+                while pending:
+                    py, px = pending.pop()
+                    for ny in range(max(0, py - 1), min(height, py + 2)):
+                        for nx in range(max(0, px - 1), min(width, px + 2)):
+                            if solid[ny, nx] and not connected[ny, nx]:
+                                connected[ny, nx] = True
+                                pending.append((ny, nx))
+                if connected.sum() / solid.sum() < 0.995:
+                    raise ValueError(f"Climbing pose {index} has a disconnected body part")
             yy, xx = np.mgrid[:height, :width]
             red, green, blue = pose[:, :, :3].astype(np.int16).transpose(2, 0, 1)
             distance = (xx - metadata["anchorX"]) ** 2 + (yy - metadata["anchorY"]) ** 2

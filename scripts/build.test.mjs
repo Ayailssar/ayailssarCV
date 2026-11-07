@@ -104,7 +104,23 @@ test("the cliff is a separate full-height layer with a curved contact path", () 
     assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 232 && anchor.y >= 0 && anchor.y < 312));
   }
   assert(geometry.contactInset > 0);
-  assert.deepEqual(geometry.loop, { start: 50, end: 80, pixelsPerCycle: 600 });
+  assert.deepEqual(geometry.loop, { start: 54, end: 65, pixelsPerCycle: 220 });
+});
+
+test("the biography is a normal-order group of exactly three paragraphs", () => {
+  const bio = sourceHtml.match(/<div class="bio-copy"[\s\S]*?<\/div>/)[0];
+  assert(bio.includes('data-reading="top-down"'));
+  assert.equal([...bio.matchAll(/class="ink bio-paragraph"/g)].length, 3);
+  const starts = ["Architect with 7+", "Proven track record", "Currently pursuing"];
+  const positions = starts.map(text => bio.indexOf(text));
+  assert(positions.every(position => position >= 0));
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
+  assert(sourceHtml.indexOf('id="bio-copy"') < sourceHtml.indexOf('class="profile-photo"'));
+});
+
+test("the requested phone number is available as a dial link", () => {
+  assert.match(sourceHtml, /href="tel:\+972525919726"/);
+  assert.match(sourceHtml, /<span class="ink">052-5919726<\/span>/);
 });
 
 test("the supplied cliff is retained with only empty margins cropped", () => {

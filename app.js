@@ -343,7 +343,10 @@ document.querySelectorAll(".ink").forEach((block) => {
     node.replaceWith(fragment);
   });
 });
-const letters = [...document.querySelectorAll(".ink-letter")];
+const bioStage = document.getElementById("bio-stage");
+const bioCopy = document.getElementById("bio-copy");
+const bioLetters = [...bioCopy.querySelectorAll(".ink-letter")];
+const letters = [...document.querySelectorAll(".ink-letter")].filter(letter => !bioCopy.contains(letter));
 const storyContent = document.querySelector(".about-content");
 const storyPanel = document.querySelector(".story-panel");
 const climbFigure = document.getElementById("climb-figure");
@@ -368,6 +371,8 @@ let cliffReady = false;
 let renderedClimbFrame = -1;
 let storyMaximum = 0;
 let storySized = false;
+let bioTravel = 0;
+let bioBottom = 24;
 
 function reportClimbError(message) {
   climbStatus.textContent = message;
@@ -434,6 +439,14 @@ function storyScrollLimit() {
 function sizeStory() {
   const progress = storySized && storyMaximum ? clamp(1 - about.scrollTop / storyMaximum) : 0;
   about.style.setProperty("--story-viewport", `${about.clientHeight}px`);
+  const headerHeight = about.querySelector(".header").getBoundingClientRect().height;
+  bioCopy.style.setProperty("--bio-max-height", `${Math.max(120, about.clientHeight - headerHeight - 48)}px`);
+  const bioHeight = bioCopy.getBoundingClientRect().height;
+  bioTravel = Math.max(420, Math.ceil(bioLetters.length * 1.2));
+  bioBottom = Math.max(24, about.clientHeight - headerHeight - 24 - bioHeight);
+  bioStage.style.setProperty("--bio-travel", `${bioTravel}px`);
+  bioStage.style.setProperty("--bio-height", `${bioHeight}px`);
+  bioCopy.style.setProperty("--bio-bottom", `${bioBottom}px`);
   const maximum = storyScrollLimit();
   if (!storySized || maximum !== storyMaximum) {
     about.scrollTo({ top: (1 - progress) * maximum, behavior: "instant" });
@@ -443,9 +456,31 @@ function sizeStory() {
   needsMeasure = true;
   scheduleUpdate();
 }
+function biographyRange() {
+  const stageTop = bioStage.getBoundingClientRect().top - about.getBoundingClientRect().top + about.scrollTop;
+  const pinTop = about.clientHeight - bioBottom - bioCopy.getBoundingClientRect().height;
+  const start = stageTop + bioTravel - pinTop;
+  return { start, end: start - bioTravel };
+}
+function updateBiography() {
+  const range = biographyRange();
+  const progress = clamp((range.start - about.scrollTop) / bioTravel);
+  const count = Math.floor(progress * bioLetters.length);
+  bioLetters.forEach((letter, index) => letter.classList.toggle("is-read", index < count));
+  const current = bioLetters[Math.min(count, bioLetters.length - 1)];
+  const currentTop = current.getBoundingClientRect().top - bioCopy.getBoundingClientRect().top + bioCopy.scrollTop;
+  bioCopy.scrollTo({ top: progress === 0 ? 0 : Math.max(0, currentTop - bioCopy.clientHeight * 0.65), behavior: "instant" });
+  bioStage.dataset.readProgress = progress.toFixed(5);
+  bioStage.dataset.readCount = String(count);
+  const complete = count === bioLetters.length;
+  about.dataset.readDirection = complete ? "bottom-up" : "top-down";
+  return complete;
+}
 function navigateStory(target, behavior) {
   const top = target === about || target.id === "start"
     ? storyScrollLimit()
+    : target.id === "info" || bioStage.contains(target)
+      ? biographyRange().start
     : target.getBoundingClientRect().bottom - about.getBoundingClientRect().top +
       about.scrollTop - about.clientHeight + 24;
   about.scrollTo({ top: clamp(top, 0, storyScrollLimit()), behavior });
@@ -462,7 +497,7 @@ function updateClimber() {
   const cycle = loop ? distance / loop.pixelsPerCycle : 0;
   const frame = loop
     ? loop.start + (moving && atlasReady ? Math.floor((cycle % 1) * (loop.end - loop.start)) : 0)
-    : 0;
+    : 54;
   let figureX = 0;
   if (geometryReady) {
     const anchor = climbGeometry.anchors[frame];
@@ -530,6 +565,7 @@ function updateScroll() {
 
   updateClimber();
   if (!rightActive && finePointer.matches) return;
+  const biographyComplete = updateBiography();
   const readingPosition = about.scrollTop + about.clientHeight * 0.48;
   const atEnd = about.scrollTop <= 2;
   readingLines.forEach((line, index) => {
@@ -537,7 +573,9 @@ function updateScroll() {
     const duration = nextLine
       ? Math.max(1, Math.min(line.top - nextLine.top, line.height * 2.4))
       : Math.max(line.height * 2.4, 40);
-    const progress = atEnd ? 1 : clamp((line.top + line.height - readingPosition) / duration);
+    const progress = biographyComplete
+      ? (atEnd ? 1 : clamp((line.top + line.height - readingPosition) / duration))
+      : 0;
     const count = Math.floor(progress * line.letters.length);
     line.letters.forEach((letter, index) => letter.classList.toggle("is-read", index < count));
   });

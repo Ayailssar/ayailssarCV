@@ -4249,9 +4249,9 @@
     ],
     "contactInset": 18,
     "loop": {
-      "start": 50,
-      "end": 80,
-      "pixelsPerCycle": 600
+      "start": 54,
+      "end": 65,
+      "pixelsPerCycle": 220
     }
   },
   "wallSource": {
