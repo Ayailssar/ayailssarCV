@@ -60,8 +60,8 @@
   const source = wall.currentSrc;
   const loop = geometry.loop;
   const distances = new Set(Array.from({ length: 81 }, (_, index) => Math.round(index / 80 * maximum)));
-  for (let index = 0; index < loop.end - loop.start; index++) {
-    distances.add(Math.min(maximum, Math.round((index + 0.5) / (loop.end - loop.start) * loop.pixelsPerCycle)));
+  for (let index = 0; index < loop.frames.length; index++) {
+    distances.add(Math.min(maximum, Math.round((index + 0.5) / loop.frames.length * loop.pixelsPerCycle)));
   }
   for (let distance = loop.pixelsPerCycle; distance < maximum; distance += loop.pixelsPerCycle) {
     distances.add(distance - 1);
@@ -84,7 +84,7 @@
       check(wall.currentSrc === source, "The rock texture changed while scrolling.");
       check(gallery.scrollLeft === initialGallery, "CV scrolling changed the left gallery.");
       const actualDistance = maximum - about.scrollTop;
-      const expected = loop.start + (reduced ? 0 : Math.floor((actualDistance / loop.pixelsPerCycle % 1) * (loop.end - loop.start)));
+      const expected = loop.frames[reduced ? 0 : Math.floor((actualDistance / loop.pixelsPerCycle % 1) * loop.frames.length)];
       check(Number(figure.dataset.frame) === expected, "The character stopped looping through the scroll.");
       const anchor = geometry.anchors[Number(figure.dataset.frame)];
       const bounds = figure.getBoundingClientRect();
@@ -147,7 +147,8 @@
         "The complete silhouette left the panel.");
       check(bounds.left + body.left * scale >= 0 && bounds.left + body.right * scale <= innerWidth,
         "The complete silhouette left the screen.");
-      results.push({ progress, frame: Number(figure.dataset.frame), cycle: Number(figure.dataset.cycle), top: bounds.top, left: bounds.left });
+      results.push({ progress, frame: Number(figure.dataset.frame), cycle: Number(figure.dataset.cycle),
+        top: bounds.top + geometry.headY[Number(figure.dataset.frame)] * scale, left: bounds.left });
     }
     if (reduced) {
       check(results.every(result => Math.abs(result.top - results[0].top) < 0.1), "Reduced motion still moves the character.");
@@ -192,10 +193,28 @@
     check(otherLetters.every(letter => letter.classList.contains("is-read")), "The remaining categories never finished coloring.");
     const phone = document.querySelector('#contact a[href="tel:+972525919726"]');
     check(phone?.textContent.includes("052-5919726"), "The requested dial link is missing.");
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    let minimumFont = Infinity;
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      if (!node.textContent.trim()) continue;
+      const element = node.parentElement;
+      const style = getComputedStyle(element);
+      if (["SCRIPT", "STYLE"].includes(element.tagName) || style.display === "none" || style.visibility !== "visible" ||
+          !element.getClientRects().length) continue;
+      const size = parseFloat(style.fontSize);
+      minimumFont = Math.min(minimumFont, size);
+      check(size >= 10, `Text is smaller than 10px: ${node.textContent.trim().slice(0, 40)}`);
+    }
+    check(parseFloat(getComputedStyle(document.querySelector(".story-cue > span:first-child")).fontSize) >= 44,
+      "The upward-scroll arrow is too small.");
+    check(parseFloat(getComputedStyle(document.querySelector(".scroll-arrow")).fontSize) >= 38,
+      "The sideways-scroll arrow is too small.");
     return {
       fullHeightStaticCliff: true, suppliedAspectRatioPreserved: true, continuousPhysicalContact: true,
       straightSeamHidden: true, upwardCareerChronology: true, reducedMotion: reduced,
       completePoseCount: checkedBodies.size, topDownBiographyThenBottomUp: true, phoneLink: true,
+      minimumFontPixels: minimumFont, enlargedDirectionArrows: true,
       checkedPositions: results.length, completedCycles: results.at(-1).cycle,
       sampledPoses: [results[0], results[Math.floor(results.length / 2)], results.at(-1)]
     };

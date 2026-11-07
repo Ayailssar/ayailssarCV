@@ -41,15 +41,15 @@
   min-height: calc(var(--story-viewport, 100svh) - 72px);
   padding: 60px 0 52px;
 }
-.story-panel .title-note { font-size: 9px; line-height: 1.9; padding: 0; }
+.story-panel .title-note { font-size: 11px; line-height: 1.9; padding: 0; }
 .story-panel h1 { font-size: clamp(42px, 4.7vw, 76px); }
 .story-intro { margin: 0; color: var(--cp-text-muted); font-size: 15px; line-height: 1.7; }
-.story-cue { display: flex; align-items: center; gap: 16px; margin-top: 16px; font-size: 10px; line-height: 1.8; }
-.story-cue > span:first-child { font-size: 32px; color: var(--cp-story); }
-.story-cue small { color: var(--cp-text-muted); font-size: 10px; }
+.story-cue { display: flex; align-items: center; gap: 18px; margin-top: 16px; font-size: 12px; line-height: 1.8; }
+.story-cue > span:first-child { font-size: 48px; line-height: 1; color: var(--cp-story); }
+.story-cue small { color: var(--cp-text-muted); font-size: 11px; }
 .story-panel .about-row { grid-template-columns: minmax(54px, 22fr) minmax(0, 78fr); align-items: end; gap: 16px; }
-.story-panel .section-label { align-self: end; margin: 0 0 50px; line-height: 1.8; font-size: 9px; }
-.story-panel .row-content { border-bottom: 0; border-top: 1px solid var(--cp-border); padding: 44px 0 0; margin: 0 0 54px; }
+.story-panel .section-label { align-self: end; margin: 0 0 50px; line-height: 1.8; font-size: 11px; }
+.story-panel .row-content { border-bottom: 0; border-top: 1px solid var(--cp-border); padding: 44px 0 0; margin: 0 0 54px; font-size: clamp(15px, 1vw, 18px); }
 .story-panel .info .row-content,
 .story-panel .experience-list,
 .story-panel .tools-list { display: flex; flex-direction: column-reverse; gap: 32px; }
@@ -64,10 +64,10 @@
 .story-panel .profile-photo figcaption { margin-top: 12px; }
 .story-panel .experience-list { gap: 42px; }
 .story-panel .tools-list { gap: 40px; }
-.tool-number { display: block; margin-bottom: 12px; font-size: 9px; color: var(--cp-story); letter-spacing: .06em; }
+.tool-number { display: block; margin-bottom: 12px; font-size: 11px; color: var(--cp-story); letter-spacing: .06em; }
 .tool-card h3 { margin: 0 0 14px; font-size: 23px; font-weight: 500; line-height: 1.25; letter-spacing: -.025em; }
-.story-panel .tool-card .tool-names { margin: 0 0 12px; font-size: 14px; line-height: 1.8; }
-.story-panel .tool-card .tool-description { margin: 0; font-size: 13px; line-height: 1.7; }
+.story-panel .tool-card .tool-names { margin: 0 0 12px; font-size: 15px; line-height: 1.8; }
+.story-panel .tool-card .tool-description { margin: 0; font-size: 14px; line-height: 1.7; }
 .story-panel .footer-bottom { gap: 16px; padding: 24px 0 48px; }
 .climb-divider { position: absolute; inset: 0 auto 0 calc(-1 * var(--cliff-overlap)); width: calc(var(--climb-width) + var(--cliff-overlap)); z-index: 12; pointer-events: none; }
 .cliff-wall { display: block; position: absolute; top: 0; left: 0; width: auto; height: 100%; max-width: none; object-fit: contain; user-select: none; z-index: 0; }
@@ -76,6 +76,17 @@
 .climber-visual[hidden] { display: none; }
 .climb-status { position: absolute; left: 12px; right: 12px; bottom: 40px; z-index: 15; margin: 0; font-size: 10px; line-height: 1.5; color: var(--cp-danger); }
 .climb-status:empty { display: none; }
+.intro-top { font-size: 12px; }
+.visual-top > .mono, .hobby-note, .visual-bottom, .visual-bottom button,
+.replay span, .profile-photo figcaption, .footer-bottom,
+.experience-list .job-date { font-size: 11px; }
+.story-panel .header { font-size: 11px; }
+.story-panel .experience-list .job-role { font-size: 13px; }
+.story-panel .experience-list article > p:last-child { font-size: clamp(14px, .95vw, 17px); }
+dialog figcaption { font-size: 14px; }
+.visual-bottom { flex-wrap: wrap; align-items: center; row-gap: 12px; }
+.photo-status { display: inline-flex; align-items: center; justify-content: center; gap: 12px; }
+.photo-status .scroll-arrow { font-size: 40px; line-height: 1; color: var(--cp-story); }
 @media (min-width: 1700px) {
   .story-panel .about-content { padding-left: 40px; padding-right: 40px; }
   .story-panel .header { padding-left: 40px; padding-right: 40px; }
@@ -85,11 +96,11 @@
   .site::before { content: ""; position: absolute; top: 0; bottom: 0; left: calc((100% - 8px) * .42 - 12px); width: 32px; background: var(--cp-bg-elevated); pointer-events: none; }
 }
 @media (max-width: 1050px) {
-  .story-panel .header { padding: 0 18px; font-size: 8px; }
+  .story-panel .header { padding: 0 18px; font-size: 10px; }
   .story-panel .header nav { gap: 10px; }
   .story-panel .about-content { padding-left: 18px; padding-right: 18px; }
   .story-panel .about-row { display: flex; flex-direction: column-reverse; align-items: stretch; gap: 18px; }
-  .story-panel .section-label { align-self: start; margin: 0; font-size: 9px; }
+  .story-panel .section-label { align-self: start; margin: 0; font-size: 10px; }
   .story-panel .row-content { margin-bottom: 44px; }
   .story-panel h1 { font-size: clamp(36px, 4.6vw, 50px); }
 }
@@ -97,20 +108,27 @@
   .story-panel { --climb-width: 112px; --cliff-overlap: 0px; height: 88svh; min-height: 620px; }
   .story-panel main { overscroll-behavior-y: contain; }
   .story-panel .header { height: 60px; min-height: 60px; padding: 0 14px; }
-  .story-panel .header nav { gap: 9px; font-size: 8px; flex-wrap: wrap; }
+  .story-panel .header nav { gap: 9px; font-size: 10px; flex-wrap: wrap; }
   .story-panel .about-content { padding: 18px 16px 0; }
   .story-panel .title-row { min-height: calc(var(--story-viewport, 88svh) - 60px); gap: 24px; padding: 36px 0; }
-  .story-panel .title-note { font-size: 8px; }
+  .story-panel .title-note { font-size: 10px; }
   .story-panel h1 { font-size: clamp(34px, 9vw, 54px); }
-  .story-intro { font-size: 13px; }
-  .story-panel .row-content { padding-top: 32px; font-size: 13px; }
+  .story-intro { font-size: 14px; }
+  .story-panel .row-content { padding-top: 32px; font-size: 14px; }
   .story-panel .info .row-content { gap: 26px; }
   .story-panel .greeting { font-size: 18px; }
   .story-panel .profile-photo { width: 160px; }
   .tool-card h3 { font-size: 22px; }
-  .story-panel .tool-card .tool-names { font-size: 13px; }
+  .story-panel .tool-card .tool-names { font-size: 14px; }
   .climb-figure { width: 100px; }
   .story-panel .footer-bottom { flex-direction: column; line-height: 1.8; }
+  .intro-top, .intro-side small, .visual-top > .mono,
+  .hobby-note, .visual-bottom, .visual-bottom button { font-size: 10px; }
+  .intro-bottom p { font-size: 13px; }
+  .photo-status { flex-basis: 100%; }
+  .photo-status .scroll-arrow { font-size: 38px; }
+  .story-cue > span:first-child { font-size: 44px; }
+  .story-panel .ink-word { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
 }
 @media (prefers-reduced-motion: reduce) {
   .climb-figure { will-change: auto; }

@@ -46,15 +46,21 @@ test("all photos, climbing media, and the full soundtrack are embedded without m
   });
 });
 
-test("the original left panel, gallery data, gallery behavior, and base styles are unchanged", () => {
+test("gallery content, behavior, and base layout remain unchanged while the cue is enlarged", () => {
   assert.equal(digest(read("styles.css")), "52d901d8699827b08b3477a2d6df793dc96260b9d5f31dd5e5704f4b62cc70b6");
-  assert.equal(digest(sourceHtml.match(/<aside class="visual-panel"[\s\S]*?<\/aside>/)[0]),
-    "190c834ee21fcc995cba1a4c3ae555a457d39a32cc5ac7b7cec7ea5580eac766");
+  assert.match(sourceHtml, /class="scroll-arrow" aria-hidden="true">↔<\/span>/);
   assert.equal(digest(sourceScript.slice(sourceScript.indexOf("const photos"), sourceScript.indexOf("const intro"))),
     "12eeee9b68c4023f34e3c544870fcf1c7e428ffff764e0cd3913ec21a159a834");
   assert.equal(digest(sourceScript.slice(sourceScript.indexOf("const svgNS"), sourceScript.indexOf("// Keep words intact"))),
     "6b13754596deb9aeacdd70990e00277fe032302d4b088bd3f03c1af56b976197");
-  assert(!/\.visual-panel|\.hobby-|\.gallery-|\.photo-/.test(read("cv.css")));
+});
+
+test("intro copy, scroll cues, and typography follow the new readability requirements", () => {
+  assert(sourceHtml.includes("MY UNIQUE CV · 2026"));
+  assert(!sourceHtml.includes("A PERSONAL WORLD"));
+  assert(!/font-size:\s*[1-9](?:\.\d+)?px\b/.test(read("cv.css")));
+  assert.match(read("cv.css"), /\.story-cue > span:first-child\s*\{[^}]*font-size:\s*48px/);
+  assert.match(read("cv.css"), /\.photo-status \.scroll-arrow\s*\{[^}]*font-size:\s*40px/);
 });
 
 test("story order is title, about, software, experience, then contact", () => {
@@ -104,7 +110,12 @@ test("the cliff is a separate full-height layer with a curved contact path", () 
     assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 232 && anchor.y >= 0 && anchor.y < 312));
   }
   assert(geometry.contactInset > 0);
-  assert.deepEqual(geometry.loop, { start: 54, end: 65, pixelsPerCycle: 220 });
+  assert.deepEqual(geometry.loop.frames,
+    [...Array.from({ length: 17 }, (_, index) => 14 + index), ...Array.from({ length: 15 }, (_, index) => 29 - index)]);
+  assert.equal(geometry.loop.pixelsPerCycle, 320);
+  assert(geometry.loop.frames.every(frame => Number.isFinite(geometry.headY[frame]) &&
+    geometry.headY[frame] >= 0 && geometry.headY[frame] < 312));
+  assert(geometry.clearance.above > 0 && geometry.clearance.below > 0);
 });
 
 test("the biography is a normal-order group of exactly three paragraphs", () => {

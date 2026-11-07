@@ -369,6 +369,11 @@ const climbGeometry = window.ayaClimbGeometry;
 let atlasReady = false;
 let cliffReady = false;
 let renderedClimbFrame = -1;
+let displayedClimbDistance = 0;
+let climbStepAnimating = false;
+let pendingClimbInput = false;
+let climbInputTime = 0;
+let lastClimbTime = 0;
 let storyMaximum = 0;
 let storySized = false;
 let bioTravel = 0;
@@ -390,9 +395,12 @@ const geometryReady = Boolean(climbGeometry &&
   Array.isArray(climbGeometry.anchors) &&
   climbGeometry.anchors.length === climbMedia.frames && climbGeometry.anchors.every(validClimbAnchor) &&
   Number.isFinite(climbGeometry.contactInset) && climbGeometry.contactInset > 0 &&
-  climbGeometry.loop && Number.isInteger(climbGeometry.loop.start) && Number.isInteger(climbGeometry.loop.end) &&
-  climbGeometry.loop.start >= 0 && climbGeometry.loop.end <= climbMedia.frames &&
-  climbGeometry.loop.end > climbGeometry.loop.start &&
+  climbGeometry.loop && Array.isArray(climbGeometry.loop.frames) && climbGeometry.loop.frames.length >= 2 &&
+  climbGeometry.loop.frames.every(frame => Number.isInteger(frame) && frame >= 0 && frame < climbMedia.frames) &&
+  Array.isArray(climbGeometry.headY) && climbGeometry.headY.length === climbMedia.frames &&
+  climbGeometry.loop.frames.every(frame => Number.isFinite(climbGeometry.headY[frame])) &&
+  climbGeometry.clearance && Number.isFinite(climbGeometry.clearance.above) && climbGeometry.clearance.above > 0 &&
+  Number.isFinite(climbGeometry.clearance.below) && climbGeometry.clearance.below > 0 &&
   Number.isFinite(climbGeometry.loop.pixelsPerCycle) && climbGeometry.loop.pixelsPerCycle > 0);
 if (!geometryReady) {
   reportClimbError("The climbing path could not load. Showing a stationary pose.");
@@ -450,6 +458,9 @@ function sizeStory() {
   const maximum = storyScrollLimit();
   if (!storySized || maximum !== storyMaximum) {
     about.scrollTo({ top: (1 - progress) * maximum, behavior: "instant" });
+    displayedClimbDistance = maximum - about.scrollTop;
+    climbStepAnimating = false;
+    pendingClimbInput = false;
   }
   storyMaximum = maximum;
   storySized = true;
@@ -487,21 +498,55 @@ function navigateStory(target, behavior) {
   rightActive = true;
   scheduleUpdate();
 }
-function updateClimber() {
-  const progress = storyMaximum ? clamp(1 - about.scrollTop / storyMaximum) : 0;
+function beginClimbingStep() {
+  pendingClimbInput = true;
+  climbInputTime = performance.now();
+  scheduleUpdate();
+}
+function updateClimber(now) {
   const moving = geometryReady && cliffReady && !reducedMotion.matches;
-  const travel = Math.max(0, climbDivider.clientHeight - climbFigure.offsetHeight - 48);
-  const y = 24 + (moving ? (1 - progress) * travel : travel / 2);
+  const targetDistance = Math.max(0, storyMaximum - about.scrollTop);
+  if (!moving) pendingClimbInput = false;
+  if (pendingClimbInput && Math.abs(targetDistance - displayedClimbDistance) > 0.25) {
+    if (!climbStepAnimating) lastClimbTime = now - 16;
+    climbStepAnimating = true;
+    pendingClimbInput = false;
+  }
+  if (pendingClimbInput) {
+    if (now - climbInputTime < 120) scheduleUpdate();
+    else pendingClimbInput = false;
+  }
+  if (!moving || !climbStepAnimating) {
+    displayedClimbDistance = targetDistance;
+    climbStepAnimating = false;
+  } else {
+    // Show the intermediate poses even when one wheel notch spans a full cycle.
+    const elapsed = clamp(now - lastClimbTime, 1, 50);
+    displayedClimbDistance += (targetDistance - displayedClimbDistance) * (1 - Math.exp(-elapsed / 65));
+    if (Math.abs(targetDistance - displayedClimbDistance) < 0.25) {
+      displayedClimbDistance = targetDistance;
+      climbStepAnimating = false;
+    } else {
+      scheduleUpdate();
+    }
+  }
+  lastClimbTime = now;
+  const progress = storyMaximum ? clamp(displayedClimbDistance / storyMaximum) : 0;
   const loop = geometryReady ? climbGeometry.loop : null;
-  const distance = Math.max(0, storyMaximum - about.scrollTop);
+  const distance = displayedClimbDistance;
   const cycle = loop ? distance / loop.pixelsPerCycle : 0;
   const frame = loop
-    ? loop.start + (moving && atlasReady ? Math.floor((cycle % 1) * (loop.end - loop.start)) : 0)
-    : 54;
+    ? loop.frames[moving && atlasReady ? Math.floor((cycle % 1) * loop.frames.length) : 0]
+    : 14;
+  const scale = climbFigure.clientWidth / climbMedia.frameWidth;
+  const above = geometryReady ? climbGeometry.clearance.above * scale : 0;
+  const below = geometryReady ? climbGeometry.clearance.below * scale : climbFigure.offsetHeight;
+  const travel = Math.max(0, climbDivider.clientHeight - above - below - 48);
+  const headPosition = 24 + above + (moving ? (1 - progress) * travel : travel / 2);
+  const y = headPosition - (geometryReady ? climbGeometry.headY[frame] * scale : 0);
   let figureX = 0;
   if (geometryReady) {
     const anchor = climbGeometry.anchors[frame];
-    const scale = climbFigure.clientWidth / climbMedia.frameWidth;
     const wallPosition = clamp((y + anchor.y * scale) / cliffWall.clientHeight);
     const sample = wallPosition * (climbGeometry.rightEdge.length - 1);
     const index = Math.floor(sample);
@@ -514,6 +559,7 @@ function updateClimber() {
   climbFigure.dataset.progress = progress.toFixed(5);
   climbFigure.dataset.frame = String(frame);
   climbFigure.dataset.cycle = moving ? String(Math.floor(cycle)) : "0";
+  climbFigure.dataset.moving = String(climbStepAnimating || pendingClimbInput);
   if (!atlasReady || frame === renderedClimbFrame) return;
   const x = frame % climbMedia.columns * climbMedia.frameWidth;
   const row = Math.floor(frame / climbMedia.columns) * climbMedia.frameHeight;
@@ -541,7 +587,7 @@ function measureLines() {
   readingLines.sort((a, b) => b.top - a.top);
 }
 let needsMeasure = true;
-function updateScroll() {
+function updateScroll(now) {
   framePending = false;
   if (needsMeasure) {
     measureLines();
@@ -559,11 +605,7 @@ function updateScroll() {
     const textPath = scene.querySelector("textPath");
     textPath.setAttribute("startOffset", reducedMotion.matches ? "4%" : `${4 + Math.sin(phase) * 1.5}%`);
   });
-  if (photoStatus.getAttribute("role") !== "alert") {
-    photoStatus.textContent = "SCROLL TO WANDER ↔";
-  }
-
-  updateClimber();
+  updateClimber(now);
   if (!rightActive && finePointer.matches) return;
   const biographyComplete = updateBiography();
   const readingPosition = about.scrollTop + about.clientHeight * 0.48;
@@ -593,9 +635,17 @@ about.addEventListener("focusout", (event) => {
 });
 about.addEventListener("touchstart", () => { rightActive = true; }, { passive: true });
 about.addEventListener("scroll", scheduleUpdate, { passive: true });
+about.addEventListener("wheel", event => {
+  if (!event.ctrlKey && event.deltaY) beginClimbingStep();
+}, { passive: true });
+about.addEventListener("touchmove", beginClimbingStep, { passive: true });
+about.addEventListener("keydown", event => {
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) beginClimbingStep();
+});
 storyPanel.addEventListener("wheel", (event) => {
   if (event.ctrlKey || about.contains(event.target) || !event.deltaY) return;
   event.preventDefault();
+  beginClimbingStep();
   const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? about.clientHeight : 1;
   about.scrollBy({ top: event.deltaY * unit, behavior: "instant" });
   rightActive = true;

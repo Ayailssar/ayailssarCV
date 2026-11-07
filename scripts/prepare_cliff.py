@@ -16,7 +16,10 @@ from PIL import Image
 
 
 ASSETS = Path(__file__).resolve().parents[1] / "assets"
-LOOP = {"start": 54, "end": 65, "pixelsPerCycle": 220}
+LOOP = {
+    "frames": list(range(14, 31)) + list(range(29, 14, -1)),
+    "pixelsPerCycle": 320,
+}
 
 
 def prepare_cliff(source):
@@ -39,6 +42,9 @@ def prepare_cliff(source):
     metadata = json.loads((ASSETS / "climber.json").read_text(encoding="utf-8"))
     width, height = metadata["frameWidth"], metadata["frameHeight"]
     anchors = []
+    head_y = [None] * metadata["frames"]
+    clearance_above = 0
+    clearance_below = 0
     with Image.open(ASSETS / "climber-atlas.webp") as image:
         atlas = image.convert("RGBA")
         if atlas.size != (width * metadata["columns"], height * metadata["rows"]):
@@ -46,7 +52,7 @@ def prepare_cliff(source):
         for index in range(metadata["frames"]):
             x, y = index % metadata["columns"] * width, index // metadata["columns"] * height
             pose = np.asarray(atlas.crop((x, y, x + width, y + height)))
-            if LOOP["start"] <= index < LOOP["end"]:
+            if index in LOOP["frames"]:
                 solid = pose[:, :, 3] >= 128
                 ys, xs = np.nonzero(solid)
                 if not len(xs) or min(xs) < 4 or max(xs) >= width - 4 or min(ys) < 4 or max(ys) >= height - 4:
@@ -65,6 +71,17 @@ def prepare_cliff(source):
                     raise ValueError(f"Climbing pose {index} has a disconnected body part")
             yy, xx = np.mgrid[:height, :width]
             red, green, blue = pose[:, :, :3].astype(np.int16).transpose(2, 0, 1)
+            if index in LOOP["frames"]:
+                rgb = pose[:, :, :3].astype(np.int16)
+                helmet = (pose[:, :, 3] >= 240) & (xx > metadata["anchorX"] + 12) & (yy < metadata["anchorY"] + 75)
+                helmet &= (red > 105) & (rgb.max(axis=2) - rgb.min(axis=2) < 60)
+                rows = np.flatnonzero(helmet.any(axis=1))
+                if not len(rows):
+                    raise ValueError(f"No helmet reference found in complete pose {index}")
+                helmet &= yy <= rows[0] + 32
+                head_y[index] = float(np.median(np.nonzero(helmet)[0]))
+                clearance_above = max(clearance_above, head_y[index] - int(ys.min()))
+                clearance_below = max(clearance_below, int(ys.max()) + 1 - head_y[index])
             distance = (xx - metadata["anchorX"]) ** 2 + (yy - metadata["anchorY"]) ** 2
             hand = (pose[:, :, 3] >= 240) & (distance <= 24 ** 2) & (red - green > 15) & (red - blue > 20)
             candidates = np.argwhere(hand)
@@ -72,7 +89,7 @@ def prepare_cliff(source):
                 raise ValueError(f"No opaque hand contact found in pose {index}")
             chosen = candidates[np.argmin(distance[hand])]
             anchors.append({"x": int(chosen[1]), "y": int(chosen[0])})
-        first = LOOP["start"]
+        first = LOOP["frames"][0]
         x, y = first % metadata["columns"] * width, first // metadata["columns"] * height
         poster = atlas.crop((x, y, x + width, y + height))
 
@@ -84,6 +101,8 @@ def prepare_cliff(source):
         "anchors": anchors,
         "contactInset": 18,
         "loop": LOOP,
+        "headY": head_y,
+        "clearance": {"above": clearance_above, "below": clearance_below},
     }
     metadata.update({
         "wallWidth": wall.width,
@@ -112,7 +131,7 @@ def prepare_cliff(source):
             raise RuntimeError("The encoded cliff differs from the supplied image")
     print(f"Imported supplied cliff: {original.width}x{original.height}, empty-margin crop {crop}")
     print(f"Lossless wall: {wall.width}x{wall.height}; {len(right)} contour rows; {len(anchors)} opaque hand contacts")
-    print(f"Loop poses {LOOP['start']}..{LOOP['end'] - 1}, repeated every {LOOP['pixelsPerCycle']} scroll pixels")
+    print(f"Reach/pull/recover cycle: {len(LOOP['frames'])} steps, repeated every {LOOP['pixelsPerCycle']} scroll pixels")
     return metadata
 
 

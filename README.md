@@ -23,12 +23,21 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 - The character is a separate transparent layer. Only her pose and position change
   with the right panel's scroll. Her gait loops throughout the whole ascent without
   resetting her height, and an opaque hand contact stays inside the actual rock.
-  Scrolling back reverses the climb; stopping freezes her. Neither layer autoplays.
+  Scrolling back reverses the climb; each short step settles and then stops.
+  Neither layer autoplays while idle.
+- Wheel, touch, and keyboard scrolling show the intermediate reach/pull/recover
+  poses during each step instead of jumping directly to the final pose. This
+  prevents a full-cycle wheel delta from appearing motionless.
+- A measured helmet reference advances continuously upward; pose recovery cannot
+  make the character slide backward, and silhouette clearance keeps every pose
+  inside the panel.
 - Only inspected complete-body poses are displayed. Disconnected or frame-edge
   clipped poses are rejected during preparation.
 - The original left gallery, photos, wave motion, infinite horizontal scrolling,
   pointer movement, photo viewer, and soundtrack are retained.
 - The site defaults to light mode. Invert Colors and `?scoutTheme=dark` remain available.
+- Visible typography is at least 10px on every breakpoint. Direction arrows are
+  enlarged, and the entrance badge reads `MY UNIQUE CV · 2026`.
 - Reduced-motion mode shows a stationary climbing pose. The CV is still fully readable.
 - On narrow screens the unchanged gallery stays above a separately scrollable CV panel.
 
@@ -69,6 +78,9 @@ physical hand/rock contact, repeated motion through the end, upward career order
 and an unchanged independent gallery.
 It can be run with a browser evaluation tool, including
 `agent-browser eval --stdin < scripts/check-cliff-browser.js`.
+`scripts/check-wheel-browser.js` is a Playwright-page function that checks actual
+wheel gestures, including a complete-cycle delta: multiple rendered poses, visible
+body movement, monotonic ascent, and no movement after the step settles.
 
 Download **`dist/index.html`** for one-file offline use. The root `index.html` needs
 its adjacent CSS, JS, and assets. The standalone file is large because it embeds
@@ -86,8 +98,10 @@ width follows the image's native ratio at the panel's height.
 
 `cliff-geometry.js` contains the edge at every source-image row and an actual opaque
 hand anchor for every pose. The hand sits slightly inside the rock face rather
-than hovering outside its edge. Complete poses 54–64 repeat every 220 pixels of CV scrolling;
-overall vertical ascent continues independently from the repeating pose sequence.
+than hovering outside its edge. The inspected complete poses 14–30 form a
+reach/pull/recover sequence, returning through the same complete poses for a
+smooth repeat every 320 pixels of CV scrolling.
+Overall vertical ascent continues independently from the repeating pose sequence.
 The reduced-motion poster matches the loop's starting pose.
 
 To replace the cliff without rerunning person segmentation:
