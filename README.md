@@ -20,14 +20,16 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 - The supplied `cliff.png` forms the full-height divider and stays completely
   still. Only its empty transparent margin is trimmed; the visible pixels and
   original aspect ratio are preserved, without stretching or repainting.
-- The character is a separate transparent layer containing **all 300 original
-  frames in their original forward order at 30 fps**. The first CV scroll starts
-  the full ten-second sequence, which then loops continuously. There is no
-  selected-pose shortcut, reverse/ping-pong loop, or scroll-modulo frame skipping.
-- Vertical position still follows the right panel's scroll independently of
-  playback, with smooth movement and an opaque hand contact on the actual rock.
-  The animation pauses while the welcome screen/photo viewer is open or the tab
-  is hidden, and respects reduced-motion mode.
+- The character retains **all 300 source frames from the original 30fps video**.
+  Frames are controlled strictly by the CV's actual scroll position, not a clock:
+  scrolling up advances the source sequence, scrolling back retraces it, and
+  stopping freezes the exact current pose. Left-gallery scrolling does not play it.
+- Wheel movement is smoothed along with the page itself. Neighboring frames blend
+  at sub-frame positions, and a short eased bridge joins the final frame to the
+  first without a hard loop reset. No original movements are omitted.
+- Temporal foreground consistency and stable contact tracking remove flickering
+  limbs and abrupt hand-anchor switches. Both blended poses remain on the actual
+  cliff; padded rendering avoids cutting either pose during a transition.
 - A measured helmet reference advances continuously upward; pose recovery cannot
   make the character slide backward, and silhouette clearance keeps every pose
   inside the panel.
@@ -78,8 +80,8 @@ physical hand/rock contact, repeated motion through the end, upward career order
 and an unchanged independent gallery.
 It can be run with a browser evaluation tool, including
 `agent-browser eval --stdin < scripts/check-cliff-browser.js`.
-`scripts/check-full-video-browser.js` is a Playwright-page function that checks the
-first-scroll start, the entire forward sequence and its wrap back to frame zero.
+`scripts/check-scroll-video-browser.js` checks real wheel input, all source frames,
+idle freeze, left-gallery independence, and pixel continuity at the loop boundary.
 
 Download **`dist/index.html`** for one-file offline use. The root `index.html` needs
 its adjacent CSS, JS, and assets. The standalone file is large because it embeds
@@ -98,9 +100,10 @@ width follows the image's native ratio at the panel's height.
 
 `cliff-geometry.js` contains the edge at every source-image row and an actual opaque
 hand anchor for every pose. The hand sits slightly inside the rock face rather
-than hovering outside its edge. A dedicated animation clock plays every frame
-once before looping, independently of the vertical ascent. The reduced-motion
-poster matches original frame zero.
+than hovering outside its edge. Two full source cycles span the CV ascent, with
+a blended loop bridge and no autonomous playback. The padded canvas adds 32 pixels
+around each side of the source frame so frame alignment cannot crop the figure.
+The reduced-motion poster matches original frame zero.
 
 To replace the cliff without rerunning person segmentation:
 
@@ -125,9 +128,11 @@ npm test
 ```
 
 The helper is calibrated to the supplied 464 × 624, ten-second clip. MediaPipe
-tracks the complete body and guides high-resolution MobileSAM masks. Every native
-source frame is retained; nothing is substituted or skipped. The supplied cliff
-image is retained rather than regenerated. The old short-pose exporter is retired.
+tracks the complete body and guides high-resolution MobileSAM masks. A local
+optical-flow pass restores only foreground supported by neighboring source frames,
+their actual colors, and person-confidence masks. Every native source frame is
+retained; nothing is substituted or skipped. The supplied cliff image is retained
+rather than regenerated. The old short-pose exporter is retired.
 The first media rebuild downloads pinned, checksum-verified public model weights;
 frames are never uploaded. The original video and model weights are not included
 in the repository. No hosted image-processing or media-generation service is used.

@@ -111,7 +111,11 @@ test("the cliff is a separate full-height layer with a curved contact path", () 
   assert.equal(geometry.anchors.length, 300);
   assert(geometry.anchors.every(anchor => anchor.x >= 0 && anchor.x < 256 && anchor.y >= 0 && anchor.y < 352));
   assert(geometry.contactInset > 0);
-  assert.deepEqual(geometry.playback, { frames: 300, fps: 30, duration: 10, loop: true, trigger: "first-scroll" });
+  assert.deepEqual(geometry.playback, {
+    frames: 300, fps: 30, duration: 10, loop: true, mode: "scroll-scrub",
+    scrollCycles: 2, loopBlendFrames: 12, renderPadding: 32
+  });
+  assert(sourceHtml.includes('id="climber" width="320" height="416"'));
   assert(!("loop" in geometry), "A shortened pose list must not replace the original video.");
   assert.equal(geometry.headY.length, 300);
   assert(geometry.headY.every(value => Number.isFinite(value) && value >= 0 && value < 352));

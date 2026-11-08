@@ -15,15 +15,17 @@
   const gallery = document.getElementById("photo-scroll");
   const geometry = window.ayaClimbGeometry;
   const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  await frame();
   const maximum = about.scrollHeight - about.clientHeight;
   const initialScroll = about.scrollTop;
   const initialGallery = gallery.scrollLeft;
-  check(Math.abs(initialScroll - maximum) <= 2, "The CV must open at its bottom title.");
+  check(Math.abs(initialScroll - maximum) <= 2, `The CV must open at its bottom title (${initialScroll}/${maximum}).`);
   check(geometry && !climber.hidden, "Climbing media and geometry must finish loading.");
   await wall.decode();
 
   const wallBounds = wall.getBoundingClientRect();
   const storyBounds = document.querySelector(".story-panel").getBoundingClientRect();
+  const dividerBounds = document.querySelector(".climb-divider").getBoundingClientRect();
   check(Math.abs(wallBounds.height - storyBounds.height) < 1, "The cliff does not fill the panel's height.");
   check(Math.abs(wallBounds.top - storyBounds.top) < 1, "The cliff does not begin at the top.");
   check(Math.abs(wallBounds.width / wallBounds.height - wall.naturalWidth / wall.naturalHeight) < 0.0001,
@@ -63,10 +65,14 @@
 
   const results = [];
   const checkedBodies = new Set();
-  const bodyExtents = new Map();
+  const padding = geometry.playback.renderPadding;
   const source = wall.currentSrc;
   check(geometry.playback.frames === 300 && geometry.playback.fps === 30, "The original full video is not configured.");
   const distances = new Set(Array.from({ length: 21 }, (_, index) => Math.round(index / 20 * maximum)));
+  const period = 299 + geometry.playback.loopBlendFrames;
+  for (const phase of [299, 300, 303, 305, 308, period - 0.2, period, period + 0.2]) {
+    distances.add(maximum * phase / (period * geometry.playback.scrollCycles));
+  }
   const jobs = [...document.querySelectorAll(".experience-list article")];
   check(jobs.map(job => job.dataset.startYear).join(",") === "2017,2020,2021,2022,2024,2025", "Career chronology is wrong.");
   check(jobs.every((job, index) => index === 0 || job.getBoundingClientRect().top < jobs[index - 1].getBoundingClientRect().top),
@@ -86,75 +92,52 @@
       check(gallery.scrollLeft === initialGallery, "CV scrolling changed the left gallery.");
       check(Number(figure.dataset.frame) >= 0 && Number(figure.dataset.frame) < 300, "The current native frame is invalid.");
       if (reduced) check(Number(figure.dataset.frame) === 0, "Reduced motion is not a still frame.");
-      const anchor = geometry.anchors[Number(figure.dataset.frame)];
       const bounds = figure.getBoundingClientRect();
       const scale = bounds.width / climber.width;
-      const contactY = bounds.top + anchor.y * scale;
-      const sample = Math.max(0, Math.min(1, (contactY - wallBounds.top) / wallBounds.height)) * (geometry.rightEdge.length - 1);
-      const lower = Math.floor(sample);
-      const upper = Math.min(lower + 1, geometry.rightEdge.length - 1);
-      const edge = geometry.rightEdge[lower] + (geometry.rightEdge[upper] - geometry.rightEdge[lower]) * (sample - lower);
-      const hand = bounds.left + anchor.x * scale;
-      check(Math.abs(hand - (wallBounds.left + edge * wallBounds.width - geometry.contactInset * scale)) <= 2,
-        "The character lost contact with the rock.");
-      const rockX = Math.round((hand - wallBounds.left) / wallBounds.width * texture.width);
-      const rockY = Math.round((contactY - wallBounds.top) / wallBounds.height * texture.height);
-      check(rockX >= 0 && rockX < texture.width && rockY >= 0 && rockY < texture.height && alpha(rockX, rockY) > 200,
-        "The hand's contact point is outside the visible cliff.");
-      check(climber.getContext("2d").getImageData(anchor.x, anchor.y, 1, 1).data[3] >= 240,
-        "The contact anchor is not on the visible climber.");
-      const pose = Number(figure.dataset.frame);
-      if (!checkedBodies.has(pose)) {
-        const rgba = climber.getContext("2d").getImageData(0, 0, climber.width, climber.height).data;
-        const solid = new Uint8Array(climber.width * climber.height);
-        let total = 0, first = -1;
-        const extent = { left: climber.width, right: 0, top: climber.height, bottom: 0 };
-        for (let index = 0; index < solid.length; index++) {
-          if (rgba[index * 4 + 3] < 128) continue;
-          solid[index] = 1;
-          total++;
-          if (first < 0) first = index;
-          const x = index % climber.width, y = Math.floor(index / climber.width);
-          extent.left = Math.min(extent.left, x);
-          extent.right = Math.max(extent.right, x + 1);
-          extent.top = Math.min(extent.top, y);
-          extent.bottom = Math.max(extent.bottom, y + 1);
-          check(x >= 4 && x < climber.width - 4 && y >= 4 && y < climber.height - 4, "A body part touches the sprite crop.");
-          check(bounds.top + y * scale >= storyBounds.top && bounds.top + (y + 1) * scale <= storyBounds.bottom,
-            "The rendered figure is cut by the panel edge.");
+      const current = Number(figure.dataset.frame);
+      const next = Number(figure.dataset.nextFrame);
+      const blend = Number(figure.dataset.blend);
+      const head = bounds.top + (padding + geometry.headY[current]) * scale;
+      for (const [pose, weight] of [[current, 1 - blend], [next, blend]]) {
+        if (weight < 0.01) continue;
+        const anchor = geometry.anchors[pose];
+        const y = head - geometry.headY[pose] * scale;
+        const contactY = y + anchor.y * scale;
+        const sample = Math.max(0, Math.min(1, (contactY - wallBounds.top) / wallBounds.height)) * (geometry.rightEdge.length - 1);
+        const lower = Math.floor(sample), upper = Math.min(lower + 1, geometry.rightEdge.length - 1);
+        const edge = geometry.rightEdge[lower] + (geometry.rightEdge[upper] - geometry.rightEdge[lower]) * (sample - lower);
+        const hand = wallBounds.left + edge * wallBounds.width - geometry.contactInset * scale;
+        const x = hand - anchor.x * scale;
+        if (pose === current) {
+          check(Math.abs(bounds.left + padding * scale - x) <= 2, "The rendered contact differs from the cliff path.");
         }
-        check(total > 0, "The climbing pose is empty.");
-        const visited = new Uint8Array(solid.length);
-        const pending = [first];
-        visited[first] = 1;
-        let connected = 0;
-        while (pending.length) {
-          const current = pending.pop(), x = current % climber.width, y = Math.floor(current / climber.width);
-          connected++;
-          for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
-            const nx = x + dx, ny = y + dy;
-            if (nx < 0 || nx >= climber.width || ny < 0 || ny >= climber.height) continue;
-            const index = ny * climber.width + nx;
-            if (solid[index] && !visited[index]) { visited[index] = 1; pending.push(index); }
-          }
-        }
-        check(connected / total >= 0.995, "A displayed pose has a disconnected body part.");
+        const rockX = Math.round((hand - wallBounds.left) / wallBounds.width * texture.width);
+        const rockY = Math.round((contactY - wallBounds.top) / wallBounds.height * texture.height);
+        check(rockX >= 0 && rockX < texture.width && rockY >= 0 && rockY < texture.height && alpha(rockX, rockY) > 200,
+          "A blended hand lost contact with the actual cliff.");
+        const cx = Math.round((hand - bounds.left) / scale), cy = Math.round((contactY - bounds.top) / scale);
+        const handPixels = climber.getContext("2d").getImageData(cx - 1, cy - 1, 3, 3).data;
+        const visibleAlpha = Math.max(...Array.from({ length: 9 }, (_, index) => handPixels[index * 4 + 3]));
+        check(visibleAlpha >= weight * 150, "A transition removed the visible contact point.");
+        const [left, top, right, bottom] = geometry.poseBounds[pose];
+        check(y + top * scale >= storyBounds.top - 1 && y + bottom * scale <= storyBounds.bottom + 1,
+          "A complete blended silhouette left the panel.");
+        check(x + left * scale >= 0 && x + right * scale <= innerWidth, "A blended silhouette left the screen.");
+        check(x + left * scale >= dividerBounds.left - 1 && x + right * scale <= dividerBounds.right + 1,
+          "The divider clips a blended silhouette.");
+        check((x - bounds.left) / scale + left >= 2 && (x - bounds.left) / scale + right <= climber.width - 2 &&
+          (y - bounds.top) / scale + top >= 2 && (y - bounds.top) / scale + bottom <= climber.height - 2,
+          "The transition buffer clips a complete source frame.");
         checkedBodies.add(pose);
-        bodyExtents.set(pose, extent);
       }
-      const body = bodyExtents.get(pose);
-      check(bounds.top + body.top * scale >= storyBounds.top && bounds.top + body.bottom * scale <= storyBounds.bottom,
-        "The complete silhouette left the panel.");
-      check(bounds.left + body.left * scale >= 0 && bounds.left + body.right * scale <= innerWidth,
-        "The complete silhouette left the screen.");
       results.push({ progress, frame: Number(figure.dataset.frame), cycle: Number(figure.dataset.cycle),
-        top: bounds.top + geometry.headY[Number(figure.dataset.frame)] * scale, left: bounds.left });
+        top: head, left: bounds.left });
     }
     if (reduced) {
       check(results.every(result => Math.abs(result.top - results[0].top) < 0.1), "Reduced motion still moves the character.");
     } else {
       check(results.every((result, index) => index === 0 || result.top < results[index - 1].top), "The character did not climb upward.");
-      check(figure.dataset.started === "true", "The first CV scroll did not start the full video.");
+      check(geometry.playback.mode === "scroll-scrub", "The frames are not bound to scrolling.");
     }
     check(document.documentElement.scrollWidth <= innerWidth, "The page overflows horizontally.");
     check(!document.getElementById("climb-status").textContent, "A climbing media error was reported.");

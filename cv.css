@@ -69,9 +69,9 @@
 .story-panel .tool-card .tool-names { margin: 0 0 12px; font-size: 15px; line-height: 1.8; }
 .story-panel .tool-card .tool-description { margin: 0; font-size: 14px; line-height: 1.7; }
 .story-panel .footer-bottom { gap: 16px; padding: 24px 0 48px; }
-.climb-divider { position: absolute; inset: 0 auto 0 calc(-1 * var(--cliff-overlap)); width: calc(var(--climb-width) + var(--cliff-overlap)); z-index: 12; pointer-events: none; }
+.climb-divider { position: absolute; inset: 0 auto 0 calc(-1 * var(--cliff-overlap)); width: calc(var(--climb-width) + var(--cliff-overlap) + 64px); overflow: hidden; z-index: 12; pointer-events: none; }
 .cliff-wall { display: block; position: absolute; top: 0; left: 0; width: auto; height: 100%; max-width: none; object-fit: contain; user-select: none; z-index: 0; }
-.climb-figure { position: absolute; top: 0; left: 0; width: clamp(122px, 12.15vw, 186px); aspect-ratio: 256 / 352; will-change: transform; z-index: 1; overflow: visible; }
+.climb-figure { position: absolute; top: 0; left: 0; width: clamp(152.5px, 15.1875vw, 232.5px); aspect-ratio: 320 / 416; will-change: transform; z-index: 1; overflow: visible; }
 .climber-visual { display: block; width: 100%; height: 100%; object-fit: contain; }
 .climber-visual[hidden] { display: none; }
 .climb-status { position: absolute; left: 12px; right: 12px; bottom: 40px; z-index: 15; margin: 0; font-size: 10px; line-height: 1.5; color: var(--cp-danger); }
@@ -120,7 +120,7 @@ dialog figcaption { font-size: 14px; }
   .story-panel .profile-photo { width: 160px; }
   .tool-card h3 { font-size: 22px; }
   .story-panel .tool-card .tool-names { font-size: 14px; }
-  .climb-figure { width: 110px; }
+  .climb-figure { width: 137.5px; }
   .story-panel .footer-bottom { flex-direction: column; line-height: 1.8; }
   .intro-top, .intro-side small, .visual-top > .mono,
   .hobby-note, .visual-bottom, .visual-bottom button { font-size: 10px; }

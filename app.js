@@ -358,9 +358,9 @@ const climbStatus = document.getElementById("climb-status");
 const climbContext = climbCanvas.getContext("2d");
 const climbMedia = {
   pages: [
-    { src: "assets/climber-00.webp?v=full-6" },
-    { src: "assets/climber-01.webp?v=full-6" },
-    { src: "assets/climber-02.webp?v=full-6" }
+    { src: "assets/climber-00.webp?v=scrub-7" },
+    { src: "assets/climber-01.webp?v=scrub-7" },
+    { src: "assets/climber-02.webp?v=scrub-7" }
   ],
   frameWidth: 256,
   frameHeight: 352,
@@ -375,18 +375,12 @@ const climbGeometry = window.ayaClimbGeometry;
 let atlasReady = false;
 let loadedClimbPages = 0;
 let cliffReady = false;
-let renderedClimbFrame = -1;
+let renderedClimbKey = "";
 let climbFrameRequest = 0;
-let playbackStarted = false;
-let videoFrame = 0;
-let videoCycles = 0;
-let videoBudget = 0;
-let lastVideoTime = null;
-let displayedClimbDistance = 0;
-let climbStepAnimating = false;
-let pendingClimbInput = false;
-let climbInputTime = 0;
-let lastClimbTime = 0;
+let storyScrollTarget = null;
+let storyScrollFrame = 0;
+let storyScrollTime = 0;
+let lastRenderedDistance = 0;
 let storyMaximum = 0;
 let storySized = false;
 let bioTravel = 0;
@@ -413,7 +407,11 @@ const geometryReady = Boolean(climbGeometry &&
   climbGeometry.clearance && Number.isFinite(climbGeometry.clearance.above) && climbGeometry.clearance.above > 0 &&
   Number.isFinite(climbGeometry.clearance.below) && climbGeometry.clearance.below > 0 &&
   climbGeometry.playback?.frames === climbMedia.frames &&
-  climbGeometry.playback.fps === climbMedia.fps && climbGeometry.playback.loop === true);
+  climbGeometry.playback.fps === climbMedia.fps && climbGeometry.playback.loop === true &&
+  climbGeometry.playback.mode === "scroll-scrub" &&
+  Number.isInteger(climbGeometry.playback.scrollCycles) && climbGeometry.playback.scrollCycles > 0 &&
+  Number.isFinite(climbGeometry.playback.loopBlendFrames) && climbGeometry.playback.loopBlendFrames >= 1 &&
+  climbGeometry.playback.renderPadding === 32);
 if (!geometryReady) {
   reportClimbError("The climbing path could not load. Showing a stationary pose.");
 }
@@ -479,10 +477,8 @@ function sizeStory() {
   bioCopy.style.setProperty("--bio-bottom", `${bioBottom}px`);
   const maximum = storyScrollLimit();
   if (!storySized || maximum !== storyMaximum) {
+    cancelStoryScroll();
     about.scrollTo({ top: (1 - progress) * maximum, behavior: "instant" });
-    displayedClimbDistance = maximum - about.scrollTop;
-    climbStepAnimating = false;
-    pendingClimbInput = false;
   }
   storyMaximum = maximum;
   storySized = true;
@@ -510,6 +506,7 @@ function updateBiography() {
   return complete;
 }
 function navigateStory(target, behavior) {
+  cancelStoryScroll();
   const top = target === about || target.id === "start"
     ? storyScrollLimit()
     : target.id === "info" || bioStage.contains(target)
@@ -520,97 +517,128 @@ function navigateStory(target, behavior) {
   rightActive = true;
   scheduleUpdate();
 }
-function beginClimbingStep() {
-  pendingClimbInput = true;
-  climbInputTime = performance.now();
-  requestClimberFrame();
+function cancelStoryScroll() {
+  if (storyScrollFrame) cancelAnimationFrame(storyScrollFrame);
+  storyScrollFrame = 0;
+  storyScrollTarget = null;
+  storyScrollTime = 0;
+  scheduleUpdate();
+}
+function animateStoryScroll(now) {
+  storyScrollFrame = 0;
+  if (storyScrollTarget === null) return;
+  if (document.hidden || lightbox.open || !intro.classList.contains("dismissed")) {
+    cancelStoryScroll();
+    return;
+  }
+  const elapsed = storyScrollTime ? clamp(now - storyScrollTime, 1, 50) : 1000 / 60;
+  storyScrollTime = now;
+  const difference = storyScrollTarget - about.scrollTop;
+  const playback = climbGeometry.playback;
+  const period = climbMedia.frames - 1 + playback.loopBlendFrames;
+  const pixelsPerFrame = storyMaximum / (period * playback.scrollCycles);
+  const limit = Math.max(1, pixelsPerFrame * 0.9 * Math.min(1, elapsed / (1000 / 60)));
+  if (Math.abs(difference) <= 1) {
+    about.scrollTo({ top: storyScrollTarget, behavior: "instant" });
+    storyScrollTarget = null;
+  } else {
+    const eased = Math.abs(difference) * (1 - Math.exp(-elapsed / 70));
+    const step = Math.sign(difference) * Math.min(Math.abs(difference), limit, Math.max(1, eased));
+    about.scrollTo({ top: about.scrollTop + step, behavior: "instant" });
+    storyScrollFrame = requestAnimationFrame(animateStoryScroll);
+  }
+  updateClimber();
+  scheduleUpdate();
+}
+function handleStoryWheel(event) {
+  if (event.ctrlKey || !event.deltaY) return;
+  event.preventDefault();
+  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? about.clientHeight : 1;
+  const target = clamp((storyScrollTarget ?? about.scrollTop) + event.deltaY * unit, 0, storyScrollLimit());
+  if (reducedMotion.matches || !geometryReady) {
+    cancelStoryScroll();
+    about.scrollTo({ top: target, behavior: "instant" });
+  } else {
+    storyScrollTarget = target;
+    if (!storyScrollFrame) {
+      storyScrollTime = 0;
+      storyScrollFrame = requestAnimationFrame(animateStoryScroll);
+    }
+  }
+  rightActive = true;
+  scheduleUpdate();
 }
 function requestClimberFrame() {
   if (climbFrameRequest) return;
-  climbFrameRequest = requestAnimationFrame(now => {
+  climbFrameRequest = requestAnimationFrame(() => {
     climbFrameRequest = 0;
-    updateClimber(now);
+    updateClimber();
   });
 }
-function updateClimber(now) {
+function updateClimber() {
   const moving = geometryReady && cliffReady && !reducedMotion.matches;
   const visible = !document.hidden && intro.classList.contains("dismissed") && !lightbox.open;
-  const targetDistance = Math.max(0, storyMaximum - about.scrollTop);
-  if (moving && visible && storySized && targetDistance > 2) playbackStarted = true;
-  if (!moving) pendingClimbInput = false;
-  if (pendingClimbInput && Math.abs(targetDistance - displayedClimbDistance) > 0.25) {
-    if (!climbStepAnimating) lastClimbTime = now - 16;
-    climbStepAnimating = true;
-    pendingClimbInput = false;
-  }
-  if (pendingClimbInput) {
-    if (now - climbInputTime >= 120) pendingClimbInput = false;
-  }
-  if (!moving || !climbStepAnimating) {
-    displayedClimbDistance = targetDistance;
-    climbStepAnimating = false;
-  } else {
-    // Show the intermediate poses even when one wheel notch spans a full cycle.
-    const elapsed = clamp(now - lastClimbTime, 1, 50);
-    displayedClimbDistance += (targetDistance - displayedClimbDistance) * (1 - Math.exp(-elapsed / 65));
-    if (Math.abs(targetDistance - displayedClimbDistance) < 0.25) {
-      displayedClimbDistance = targetDistance;
-      climbStepAnimating = false;
-    }
-  }
-  lastClimbTime = now;
-  const progress = storyMaximum ? clamp(displayedClimbDistance / storyMaximum) : 0;
-  const playing = playbackStarted && moving && visible && atlasReady;
-  const interval = 1000 / climbMedia.fps;
-  if (playing) {
-    if (lastVideoTime !== null) {
-      videoBudget += Math.min(now - lastVideoTime, interval * 2);
-      if (videoBudget + 0.001 >= interval) {
-        videoFrame = (videoFrame + 1) % climbMedia.frames;
-        if (videoFrame === 0) videoCycles++;
-        videoBudget = Math.min(interval, Math.max(0, videoBudget - interval));
-      }
-    }
-    lastVideoTime = now;
-  } else {
-    lastVideoTime = null;
-  }
-  const frame = moving && atlasReady ? videoFrame : 0;
-  const scale = climbFigure.clientWidth / climbMedia.frameWidth;
+  const distance = clamp(storyMaximum - about.scrollTop, 0, storyMaximum);
+  const progress = storyMaximum ? distance / storyMaximum : 0;
+  const playback = geometryReady ? climbGeometry.playback : null;
+  const period = playback ? climbMedia.frames - 1 + playback.loopBlendFrames : 1;
+  const totalPhase = moving && atlasReady ? progress * playback.scrollCycles * period : 0;
+  const phase = totalPhase % period;
+  const frame = Math.min(Math.floor(phase), climbMedia.frames - 1);
+  const next = frame === climbMedia.frames - 1 ? 0 : frame + 1;
+  let blend = frame === climbMedia.frames - 1 ? (phase - frame) / playback.loopBlendFrames : phase - frame;
+  if (frame === climbMedia.frames - 1) blend = blend * blend * (3 - 2 * blend);
+  const padding = 32;
+  const scale = climbFigure.clientWidth / climbCanvas.width;
   const above = geometryReady ? climbGeometry.clearance.above * scale : 0;
   const below = geometryReady ? climbGeometry.clearance.below * scale : climbFigure.offsetHeight;
   const travel = Math.max(0, climbDivider.clientHeight - above - below - 48);
   const headPosition = 24 + above + (moving ? (1 - progress) * travel : travel / 2);
-  const y = headPosition - (geometryReady ? climbGeometry.headY[frame] * scale : 0);
-  let figureX = 0;
-  if (geometryReady) {
-    const anchor = climbGeometry.anchors[frame];
+  function posePosition(index) {
+    const y = headPosition - (geometryReady ? climbGeometry.headY[index] * scale : 0);
+    if (!geometryReady) return { x: 0, y };
+    const anchor = climbGeometry.anchors[index];
     const wallPosition = clamp((y + anchor.y * scale) / cliffWall.clientHeight);
     const sample = wallPosition * (climbGeometry.rightEdge.length - 1);
-    const index = Math.floor(sample);
-    const start = climbGeometry.rightEdge[index];
-    const end = climbGeometry.rightEdge[Math.min(index + 1, climbGeometry.rightEdge.length - 1)];
-    const edge = (start + (end - start) * (sample - index)) * cliffWall.clientWidth;
-    figureX = edge - (anchor.x + climbGeometry.contactInset) * scale;
+    const lower = Math.floor(sample);
+    const start = climbGeometry.rightEdge[lower];
+    const end = climbGeometry.rightEdge[Math.min(lower + 1, climbGeometry.rightEdge.length - 1)];
+    const edge = (start + (end - start) * (sample - lower)) * cliffWall.clientWidth;
+    return { x: edge - (anchor.x + climbGeometry.contactInset) * scale, y };
   }
-  climbFigure.style.transform = `translate3d(${figureX}px, ${y}px, 0)`;
+  const firstPosition = posePosition(frame);
+  const nextPosition = posePosition(next);
+  const dx = (nextPosition.x - firstPosition.x) / scale;
+  const dy = (nextPosition.y - firstPosition.y) / scale;
+  climbFigure.style.transform = `translate3d(${firstPosition.x - padding * scale}px, ${firstPosition.y - padding * scale}px, 0)`;
   climbFigure.dataset.progress = progress.toFixed(5);
   climbFigure.dataset.frame = String(frame);
-  climbFigure.dataset.cycle = String(videoCycles);
-  climbFigure.dataset.moving = String(climbStepAnimating || pendingClimbInput);
-  climbFigure.dataset.playing = String(playing);
-  climbFigure.dataset.started = String(playbackStarted);
-  if (visible && (playing || climbStepAnimating || pendingClimbInput)) requestClimberFrame();
-  if (!atlasReady || frame === renderedClimbFrame) return;
-  const page = Math.floor(frame / climbMedia.framesPerPage);
-  const cell = frame % climbMedia.framesPerPage;
-  const x = cell % climbMedia.columns * climbMedia.frameWidth;
-  const row = Math.floor(cell / climbMedia.columns) * climbMedia.frameHeight;
+  climbFigure.dataset.nextFrame = String(next);
+  climbFigure.dataset.blend = blend.toFixed(6);
+  climbFigure.dataset.phase = phase.toFixed(6);
+  climbFigure.dataset.cycle = String(Math.floor(totalPhase / period));
+  climbFigure.dataset.moving = String(storyScrollTarget !== null);
+  climbFigure.dataset.playing = String(visible && moving && Math.abs(distance - lastRenderedDistance) > 0.001);
+  lastRenderedDistance = distance;
+  const key = `${frame}:${next}:${blend.toFixed(6)}:${dx.toFixed(4)}:${dy.toFixed(4)}`;
+  if (!atlasReady || key === renderedClimbKey) return;
   climbContext.clearRect(0, 0, climbCanvas.width, climbCanvas.height);
-  climbContext.drawImage(climbImages[page], x, row, climbMedia.frameWidth, climbMedia.frameHeight,
-    0, 0, climbCanvas.width, climbCanvas.height);
+  function drawPose(index, x, y, opacity, composite) {
+    const page = Math.floor(index / climbMedia.framesPerPage);
+    const cell = index % climbMedia.framesPerPage;
+    climbContext.globalAlpha = opacity;
+    climbContext.globalCompositeOperation = composite;
+    climbContext.drawImage(climbImages[page], cell % climbMedia.columns * climbMedia.frameWidth,
+      Math.floor(cell / climbMedia.columns) * climbMedia.frameHeight,
+      climbMedia.frameWidth, climbMedia.frameHeight, x, y, climbMedia.frameWidth, climbMedia.frameHeight);
+  }
+  drawPose(frame, padding, padding, 1 - blend, "source-over");
+  if (blend > 0) drawPose(next, padding + dx, padding + dy, blend, "lighter");
+  climbContext.globalAlpha = 1;
+  climbContext.globalCompositeOperation = "source-over";
   climbCanvas.dataset.renderedFrame = String(frame);
-  renderedClimbFrame = frame;
+  climbCanvas.dataset.renderedNextFrame = String(next);
+  renderedClimbKey = key;
 }
 
 let readingLines = [];
@@ -679,29 +707,25 @@ about.addEventListener("focusout", (event) => {
 });
 about.addEventListener("touchstart", () => { rightActive = true; }, { passive: true });
 about.addEventListener("scroll", scheduleUpdate, { passive: true });
-about.addEventListener("wheel", event => {
-  if (!event.ctrlKey && event.deltaY) beginClimbingStep();
-}, { passive: true });
-about.addEventListener("touchmove", beginClimbingStep, { passive: true });
+about.addEventListener("wheel", handleStoryWheel, { passive: false });
+storyPanel.addEventListener("pointerdown", cancelStoryScroll, { passive: true });
 about.addEventListener("keydown", event => {
-  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) beginClimbingStep();
+  if (["ArrowUp", "ArrowDown", "PageUp", "PageDown", "Home", "End", " "].includes(event.key)) cancelStoryScroll();
 });
 storyPanel.addEventListener("wheel", (event) => {
-  if (event.ctrlKey || about.contains(event.target) || !event.deltaY) return;
-  event.preventDefault();
-  beginClimbingStep();
-  const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? about.clientHeight : 1;
-  about.scrollBy({ top: event.deltaY * unit, behavior: "instant" });
-  rightActive = true;
-  scheduleUpdate();
+  if (!about.contains(event.target)) handleStoryWheel(event);
 }, { passive: false });
+about.addEventListener("scrollend", requestClimberFrame);
 photoScroll.addEventListener("scroll", scheduleUpdate, { passive: true });
 window.addEventListener("scroll", scheduleUpdate, { passive: true });
 window.addEventListener("resize", () => { needsMeasure = true; scheduleUpdate(); });
 window.addEventListener("load", () => { needsMeasure = true; scheduleUpdate(); });
-reducedMotion.addEventListener("change", scheduleUpdate);
+reducedMotion.addEventListener("change", () => {
+  cancelStoryScroll();
+  scheduleUpdate();
+});
 document.addEventListener("visibilitychange", () => {
-  lastVideoTime = null;
+  if (document.hidden) cancelStoryScroll();
   requestClimberFrame();
 });
 desktop.addEventListener("change", () => { needsMeasure = true; scheduleUpdate(); });

@@ -18,6 +18,7 @@ import cv2
 import mediapipe as mp
 import numpy as np
 from PIL import Image, ImageDraw
+from stabilize_climber import PLAYBACK, stabilize
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -192,7 +193,7 @@ def build(source, model_dir, pose_model, output, review):
     review.mkdir(parents=True, exist_ok=True)
     encoder, decoder = support.load_models(model_dir)
     options = dict(base_options=mp.tasks.BaseOptions(model_asset_path=str(pose_model)), output_segmentation_masks=True)
-    anchors, heads, bounds, diagnostics, pages = [], [], [], [], []
+    anchors, heads, bounds, diagnostics, pages, confidence = [], [], [], [], [], []
     review_sheet = Image.new("RGB", (6 * FRAME_WIDTH, 5 * (FRAME_HEIGHT + 22)), "#f7f4ef")
     draw = ImageDraw.Draw(review_sheet)
     atlas = None
@@ -215,6 +216,11 @@ def build(source, model_dir, pose_model, output, review):
                 result = fallback.detect(image)
             if not result.pose_landmarks:
                 raise RuntimeError(f"No body detected in original frame {index}; no frames will be skipped")
+            probability = np.zeros((FRAME_HEIGHT, FRAME_WIDTH), np.uint8)
+            probability[20:332, 12:244] = np.rint(cv2.resize(
+                result.segmentation_masks[0].numpy_view().squeeze(), (232, 312),
+                interpolation=cv2.INTER_AREA) * 255).astype(np.uint8)
+            confidence.append(probability)
             solid, score = person_mask(rgb, result, index, encoder, decoder)
             sprite = make_sprite(rgb, solid)
             anchor, head, box = frame_geometry(sprite, result.pose_landmarks[0], index)
@@ -253,7 +259,7 @@ def build(source, model_dir, pose_model, output, review):
         "clearance": {"above": above, "below": below},
         "poseBounds": bounds,
         "contactInset": 12,
-        "playback": {"frames": FRAME_COUNT, "fps": FPS, "duration": FRAME_COUNT / FPS, "loop": True, "trigger": "first-scroll"},
+        "playback": dict(PLAYBACK),
     }
     metadata = {
         "frameWidth": FRAME_WIDTH, "frameHeight": FRAME_HEIGHT,
@@ -271,7 +277,14 @@ def build(source, model_dir, pose_model, output, review):
     (output / "cliff-geometry.js").write_text("window.ayaClimbGeometry = Object.freeze(" + json.dumps(geometry, separators=(",", ":")) + ");\n")
     review_sheet.save(review / "all-movements.png")
     (review / "frames.json").write_text(json.dumps(diagnostics, indent=2) + "\n")
-    print(f"Finished: all {FRAME_COUNT} source frames in original order, {len(pages)} transparent sheets.", flush=True)
+    confidence_path = review / "person-confidence.npz"
+    np.savez_compressed(confidence_path, confidence=np.stack(confidence), sourceSha256=metadata["sourceVideoSha256"])
+    stabilize(source, output, output, review / "stabilized", confidence_path)
+    metadata = json.loads((output / "climber.json").read_text())
+    validate_export(output, metadata)
+    (output / "climber.json").write_text(json.dumps(metadata, indent=2) + "\n")
+    (output / "cliff-geometry.js").write_text("window.ayaClimbGeometry = Object.freeze(" + json.dumps(metadata["geometry"], separators=(",", ":")) + ");\n")
+    print(f"Finished: all {FRAME_COUNT} source frames in original order, stabilized for scroll-only playback.", flush=True)
 
 
 if __name__ == "__main__":
