@@ -468,6 +468,7 @@ function sizeStory() {
   const progress = storySized && storyMaximum ? clamp(1 - about.scrollTop / storyMaximum) : 0;
   about.style.setProperty("--story-viewport", `${about.clientHeight}px`);
   const headerHeight = about.querySelector(".header").getBoundingClientRect().height;
+  about.style.setProperty("--story-header-height", `${headerHeight}px`);
   bioCopy.style.setProperty("--bio-max-height", `${Math.max(120, about.clientHeight - headerHeight - 48)}px`);
   const bioHeight = bioCopy.getBoundingClientRect().height;
   bioTravel = Math.max(420, Math.ceil(bioLetters.length * 1.2));

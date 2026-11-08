@@ -10,13 +10,19 @@ The original site at https://ayailssar.github.io/ is not changed by this project
 ## Experience
 
 - The right panel starts at its bottom title. Scroll upward through About,
-  Software & Tools, Experience, and contact details.
+  Technical Skills, Experience, Education, Certifications, and contact details.
+- Professional text follows the supplied Architect CV: computational design and
+  AI-enabled AEC workflows, exact role dates and project details, academic
+  qualifications, certifications, technical levels, and languages. The original
+  PDF is not uploaded with the website.
 - About keeps its three paragraphs in normal top-to-bottom order. Its text stays
   in view while letters turn orange from top to bottom. Only after the biography
   is fully colored does the rest of the page resume bottom-to-top highlighting,
   after the portrait. On small screens the current line stays in view.
 - The career timeline grows upward: Haifa Municipality (2017), Giora Gur,
   Oren M.A.Z, Tito Oman, Bar Orian, and finally Kodo at the top.
+- Education also reads upward from the B.Arch.Ed. at WIZO to the current M.A. at
+  HIT. Certifications follow Education, with contact information afterward.
 - The supplied `cliff.png` forms the full-height divider and stays completely
   still. Only its empty transparent margin is trimmed; the visible pixels and
   original aspect ratio are preserved, without stretching or repainting.

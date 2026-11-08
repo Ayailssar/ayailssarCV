@@ -63,8 +63,8 @@ test("intro copy, scroll cues, and typography follow the new readability require
   assert.match(read("cv.css"), /\.photo-status \.scroll-arrow\s*\{[^}]*font-size:\s*40px/);
 });
 
-test("story order is title, about, software, experience, then contact", () => {
-  const ids = ["start", "info", "software", "experience", "contact"];
+test("the upward story places education and certifications between experience and contact", () => {
+  const ids = ["start", "info", "software", "experience", "education", "certifications", "contact"];
   const positions = ids.map(id => sourceHtml.indexOf(`id="${id}"`));
   assert(positions.every(position => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
@@ -129,7 +129,7 @@ test("the biography is a normal-order group of exactly three paragraphs", () => 
   const bio = sourceHtml.match(/<div class="bio-copy"[\s\S]*?<\/div>/)[0];
   assert(bio.includes('data-reading="top-down"'));
   assert.equal([...bio.matchAll(/class="ink bio-paragraph"/g)].length, 3);
-  const starts = ["Architect with 7+", "Proven track record", "Currently pursuing"];
+  const starts = ["I'm an architect with 7+", "I'm a final-year M.A.", "I lead AI implementation"];
   const positions = starts.map(text => bio.indexOf(text));
   assert(positions.every(position => position >= 0));
   assert.deepEqual(positions, [...positions].sort((a, b) => a - b));
@@ -138,7 +138,29 @@ test("the biography is a normal-order group of exactly three paragraphs", () => 
 
 test("the requested phone number is available as a dial link", () => {
   assert.match(sourceHtml, /href="tel:\+972525919726"/);
-  assert.match(sourceHtml, /<span class="ink">052-5919726<\/span>/);
+  assert.match(sourceHtml, /<span class="ink">\+972-52-591-9726<\/span>/);
+});
+
+test("professional facts match the supplied Architect CV", () => {
+  for (const text of [
+    "Nov 2022 — Mar 2024", "Architect — Intern · Bnei Brak",
+    "Aug 2021 — Aug 2022", "Sep 2020 — Aug 2021",
+    "4 buildings with 28 floors", "IDF facility project",
+    "B.Arch.Ed. in Architecture &amp; Education", "WIZO Academic Center, Haifa",
+    "2016 — 2020", "GPA 86.7 · Distinction",
+    "2025 — Present · Final year", "HIT — Holon Institute of Technology",
+    "Algorithmic Design — 95", "Robotics &amp; Design — 90",
+    "Gen AI Agents &amp; Apps", "Navigate the Landscape", "Beyond the Chatbot",
+    "Foundational Concepts", "Microsoft Dataverse", "Pendo — Product Management",
+    "Product Management Basics", "Product Analytics",
+    "Python &amp; JavaScript (basic)", "Agentic Coding (advanced)",
+    "Hebrew (native) · English (fluent)", "Tel Aviv, Israel"
+  ]) assert(sourceHtml.includes(text), text);
+  for (const obsolete of ["Knowledge &amp; Quality Specialist", "Power BI", "Power Automate", "Canva"]) {
+    assert(!sourceHtml.includes(obsolete), obsolete);
+  }
+  assert.equal((sourceHtml.match(/href="#education"/g) || []).length, 1);
+  assert.equal((sourceHtml.match(/href="#certifications"/g) || []).length, 1);
 });
 
 test("the supplied cliff is retained with only empty margins cropped", () => {

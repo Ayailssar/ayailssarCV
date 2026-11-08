@@ -77,6 +77,10 @@
   check(jobs.map(job => job.dataset.startYear).join(",") === "2017,2020,2021,2022,2024,2025", "Career chronology is wrong.");
   check(jobs.every((job, index) => index === 0 || job.getBoundingClientRect().top < jobs[index - 1].getBoundingClientRect().top),
     "Later roles must appear above earlier roles.");
+  const chapters = ["experience", "education", "certifications", "contact"].map(id => document.getElementById(id));
+  check(chapters.every((chapter, index) => chapter && (!index ||
+    chapter.getBoundingClientRect().top < chapters[index - 1].getBoundingClientRect().top)),
+  "The upward chapter order must be Experience, Education, Certifications, then Contact.");
   try {
     for (const distance of [...distances].sort((a, b) => a - b)) {
       const progress = distance / maximum;
@@ -175,7 +179,7 @@
     await frame();
     check(otherLetters.every(letter => letter.classList.contains("is-read")), "The remaining categories never finished coloring.");
     const phone = document.querySelector('#contact a[href="tel:+972525919726"]');
-    check(phone?.textContent.includes("052-5919726"), "The requested dial link is missing.");
+    check(phone?.textContent.includes("+972-52-591-9726"), "The CV dial link is missing.");
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     let minimumFont = Infinity;
     while (walker.nextNode()) {
